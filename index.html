@@ -1,0 +1,1286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Shadow-fleet maritime surveillance demo where SQLite, running in the browser, is the entire application.">
+<title>Darkwater Strait Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+html{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}
+/* Layout: a watch-floor console — chart on the left, live findings on the right, analysis drawers below. */
+:root{
+  --bg:#e9eef0; --panel:#f7f9f9; --ink:#14232b; --muted:#5a6c74; --rule:#c9d4d8;
+  --water:#d3e4ea; --water-deep:#c3d8e0; --land:#ece2c6; --land-edge:#b9a77a;
+  --accent:#a8206f; --accent-soft:#a8206f22;
+  --hi:#c23a1d; --med:#b77a06; --lo:#2f7d73; --track:#3e5966;
+  --code-bg:#eef2f3; --kw:#1f5f8b; --str:#8a4b08; --cm:#7b8b91; --num:#7a2b8f;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0b151a; --panel:#111f26; --ink:#d8e5e9; --muted:#8aa1a9; --rule:#22363f;
+  --water:#0f2a35; --water-deep:#0c232d; --land:#2b2a22; --land-edge:#5c5638;
+  --accent:#e25aa9; --accent-soft:#e25aa92e;
+  --hi:#f0694a; --med:#e0a634; --lo:#4fb3a5; --track:#7c98a4;
+  --code-bg:#0d1a20; --kw:#7cb7e6; --str:#e6b06a; --cm:#6b8089; --num:#d39be6;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0b151a; --panel:#111f26; --ink:#d8e5e9; --muted:#8aa1a9; --rule:#22363f;
+  --water:#0f2a35; --water-deep:#0c232d; --land:#2b2a22; --land-edge:#5c5638;
+  --accent:#e25aa9; --accent-soft:#e25aa92e;
+  --hi:#f0694a; --med:#e0a634; --lo:#4fb3a5; --track:#7c98a4;
+  --code-bg:#0d1a20; --kw:#7cb7e6; --str:#e6b06a; --cm:#6b8089; --num:#d39be6;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 40px}
+.wrap{max-width:1480px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+
+/* masthead */
+header.mast{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;border-bottom:2px solid var(--ink);padding-bottom:12px}
+.brand{display:flex;flex-direction:column;gap:2px;min-width:0}
+.brand h1{margin:0;font-family:var(--display);font-stretch:62%;font-weight:850;font-size:clamp(34px,5vw,52px);line-height:.9;letter-spacing:.01em;text-transform:uppercase}
+.brand h1 span{color:var(--accent)}
+.brand p{margin:0;font-family:var(--display);font-stretch:100%;font-weight:500;font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.ops{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.clock{display:flex;flex-direction:column;align-items:flex-end;padding-right:6px}
+.clock b{font-family:var(--mono);font-size:22px;font-weight:600;letter-spacing:.02em}
+.clock small{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.btn{border:1px solid var(--rule);background:var(--panel);padding:7px 12px;border-radius:3px;cursor:pointer;font-weight:500;white-space:nowrap}
+.btn:hover{border-color:var(--ink)}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.primary:hover{background:var(--accent);border-color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+.lede{margin:0;max-width:78ch;color:var(--muted)}
+.lede strong{color:var(--ink);font-weight:600}
+
+/* main grid */
+.grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+@media (min-width:1080px){.grid{grid-template-columns:minmax(0,1fr) 400px}}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:4px;min-width:0;display:flex;flex-direction:column}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;border-bottom:1px solid var(--rule)}
+.ph h2{margin:0;font-family:var(--display);font-stretch:75%;font-weight:700;font-size:15px;letter-spacing:.08em;text-transform:uppercase}
+.ph .meta{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.sqlchip{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;border:1px solid var(--accent);color:var(--accent);background:transparent;padding:2px 7px;border-radius:2px;cursor:pointer}
+.sqlchip:hover{background:var(--accent);color:var(--panel)}
+
+/* chart */
+.chartbox{position:relative;background:var(--water)}
+canvas#map{display:block;width:100%;cursor:crosshair}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;font-size:12px;color:var(--muted);border-top:1px solid var(--rule)}
+.legend i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
+.scrub{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:9px 12px;border-top:1px solid var(--rule)}
+.scrub label{font-family:var(--display);font-stretch:75%;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:12px}
+.scrub input[type=range]{flex:1 1 220px;accent-color:var(--accent);min-width:0}
+.scrub .mono{font-size:12px}
+.toggle{display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;user-select:none}
+.toggle input{accent-color:var(--accent)}
+
+/* right rail */
+.rail{display:flex;flex-direction:column;gap:16px;min-width:0}
+.dark-list{display:flex;flex-direction:column}
+.dark-item{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 12px;border-bottom:1px solid var(--rule);cursor:pointer;background:var(--accent-soft)}
+.dark-item:last-child{border-bottom:0}
+.dark-item b{font-family:var(--display);font-stretch:85%;font-weight:700;font-size:15px;letter-spacing:.02em}
+.dark-item .mono{font-size:12px}
+.empty{padding:14px 12px;color:var(--muted);font-size:13px}
+.alerts{overflow:auto;max-height:520px}
+.al{display:grid;grid-template-columns:4px 1fr;border-bottom:1px solid var(--rule)}
+.al .sev{background:var(--lo)}
+.al.high .sev{background:var(--hi)} .al.medium .sev{background:var(--med)}
+.al .body{padding:8px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.al .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.kind{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.al.high .kind{color:var(--hi)} .al.medium .kind{color:var(--med)} .al.low .kind{color:var(--lo)}
+.al .who{font-weight:600;cursor:pointer}
+.al .who:hover{color:var(--accent)}
+.al .det{font-size:12.5px;color:var(--muted)}
+.al .acts{display:flex;gap:6px;align-items:center}
+.al .acts button{font-size:11px;padding:2px 8px;border:1px solid var(--rule);background:transparent;border-radius:2px;cursor:pointer}
+.al .acts button:hover{border-color:var(--ink)}
+.al.dismissed{opacity:.5}
+.pill{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:2px;border:1px solid currentColor}
+.pill.escalated{color:var(--accent)} .pill.dismissed{color:var(--muted)}
+
+/* drawers */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--rule);overflow-x:auto}
+.tab{border:0;background:transparent;padding:11px 16px;cursor:pointer;font-family:var(--display);font-stretch:75%;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:14px;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.tabpanel{padding:14px;min-width:0}
+.scroll-x{overflow-x:auto;min-width:0}
+table.data{border-collapse:collapse;width:100%;font-size:13px}
+table.data th{font-family:var(--display);font-stretch:75%;font-weight:700;letter-spacing:.07em;text-transform:uppercase;font-size:11.5px;text-align:left;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--rule);white-space:nowrap}
+table.data td{padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:middle;font-variant-numeric:tabular-nums}
+table.data tr.click{cursor:pointer} table.data tr.click:hover td{background:var(--accent-soft)}
+table.data td.num{text-align:right;font-family:var(--mono)}
+.bar{display:flex;height:12px;width:220px;max-width:100%;background:var(--code-bg);border-radius:1px;overflow:hidden}
+.bar span{display:block;height:100%}
+.score{font-family:var(--mono);font-weight:600;font-size:15px}
+.tier-hi{color:var(--hi)} .tier-med{color:var(--med)}
+
+.dossier{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+@media (min-width:900px){.dossier{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}}
+.dossier h3{margin:0 0 8px;font-family:var(--display);font-stretch:75%;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:13px;color:var(--muted)}
+.vname{font-family:var(--display);font-stretch:70%;font-weight:850;font-size:34px;line-height:1;text-transform:uppercase;margin:0 0 6px}
+.particulars{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px 16px;margin:10px 0 16px}
+.particulars div{display:flex;flex-direction:column}
+.particulars small{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.particulars span{font-family:var(--mono);font-size:13px}
+.tree{display:flex;flex-direction:column;gap:2px;font-size:13px}
+.node{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dotted var(--rule)}
+.node .share{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap}
+.node .j{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.sanc{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.06em;color:#fff;background:var(--hi);padding:1px 5px;border-radius:2px}
+.kv{font-size:13px;display:flex;flex-direction:column;gap:4px}
+.spark{width:100%;height:80px;display:block}
+.section{display:flex;flex-direction:column;gap:6px}
+.col{display:flex;flex-direction:column;gap:18px;min-width:0}
+
+.search{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.search input,.search select,.search textarea{border:1px solid var(--rule);background:var(--bg);padding:7px 10px;border-radius:3px;min-width:0}
+.search input{flex:1 1 240px}
+.notes{display:flex;flex-direction:column;gap:10px}
+.notecard{border-left:3px solid var(--rule);padding:4px 12px;max-width:80ch}
+.notecard header{font-size:12px;color:var(--muted);display:flex;gap:10px}
+.notecard p{margin:3px 0 0}
+mark{background:var(--accent-soft);color:var(--ink);padding:0 2px;border-bottom:1px solid var(--accent)}
+
+/* console */
+.console{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+@media (min-width:1000px){.console{grid-template-columns:260px minmax(0,1fr)}}
+.presets{display:flex;flex-direction:column;gap:2px}
+.presets button{text-align:left;border:0;background:transparent;padding:6px 8px;border-radius:2px;cursor:pointer;font-size:13px;border-left:2px solid transparent}
+.presets button:hover{background:var(--accent-soft);border-left-color:var(--accent)}
+.presets h4{margin:10px 0 4px;font-family:var(--display);font-stretch:75%;font-weight:700;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.presets h4:first-child{margin-top:0}
+textarea#sql{width:100%;min-height:190px;resize:vertical;font-family:var(--mono);font-size:13px;line-height:1.5;background:var(--code-bg);border:1px solid var(--rule);border-radius:3px;padding:10px 12px;tab-size:2}
+.runbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:8px 0}
+.err{border:1px solid var(--hi);color:var(--hi);background:transparent;padding:8px 12px;border-radius:3px;font-family:var(--mono);font-size:12.5px;white-space:pre-wrap}
+.results{max-height:420px;overflow:auto;border:1px solid var(--rule);border-radius:3px}
+.results table.data td{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.results table.data th{position:sticky;top:0;background:var(--panel)}
+
+pre.code{margin:0;background:var(--code-bg);border:1px solid var(--rule);border-radius:3px;padding:10px 12px;font-family:var(--mono);font-size:12px;line-height:1.5;overflow-x:auto;white-space:pre}
+.tok-kw{color:var(--kw);font-weight:600}.tok-str{color:var(--str)}.tok-cm{color:var(--cm);font-style:italic}.tok-num{color:var(--num)}
+.source{display:flex;flex-direction:column;gap:10px}
+.source details{border:1px solid var(--rule);border-radius:3px;background:var(--panel)}
+.source summary{cursor:pointer;padding:8px 12px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.source summary b{font-family:var(--mono);font-size:13px}
+.source summary span{font-size:12.5px;color:var(--muted)}
+.source details pre{border:0;border-top:1px solid var(--rule);border-radius:0}
+.kindtag{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:2px;background:var(--code-bg);color:var(--muted)}
+.ideas{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-bottom:14px}
+.idea{border-top:2px solid var(--ink);padding-top:8px}
+.idea b{font-family:var(--display);font-stretch:80%;font-weight:700;font-size:15px;display:block;margin-bottom:2px}
+.idea p{margin:0;font-size:13px;color:var(--muted)}
+.idea code{font-family:var(--mono);font-size:12px;color:var(--ink)}
+
+.boot[hidden]{display:none}
+.boot{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--muted);background:var(--water)}
+footer{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 18px;border-top:1px solid var(--rule);padding-top:10px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="brand">
+      <h1>Dark<span>water</span></h1>
+      <p>Shadow-fleet watch · Singapore Strait · every rule is SQL</p>
+    </div>
+    <div class="ops">
+      <div class="clock"><b id="clock">—</b><small id="clockmeta">loading SQLite…</small></div>
+      <button class="btn" id="b10" disabled>+10 min</button>
+      <button class="btn" id="b60" disabled>+1 hour</button>
+      <button class="btn primary" id="bplay" disabled>Run clock</button>
+      <button class="btn" id="breset" disabled>Reset</button>
+    </div>
+  </header>
+
+  <p class="lede">A shipping-surveillance floor where <strong>SQLite does all of the work</strong>, running in this page. Each ten-minute tick is a batch of <code class="mono">UPDATE</code> statements. Detectors are triggers on every incoming position report. Risk is a view, beneficial ownership is a recursive query, and the scenario itself is a table. The interface only draws query results. Every vessel, company and event here is fictional.</p>
+
+  <div class="grid">
+    <section class="panel" aria-label="Chart">
+      <div class="ph"><h2>Chart · Singapore Strait &amp; Eastern OPL</h2><button class="sqlchip" data-q="positions">SQL</button></div>
+      <div class="chartbox"><canvas id="map" role="img" aria-label="Chart of vessel positions, tracks and zones"></canvas><div class="boot" id="boot">Compiling SQLite and simulating the first 8 hours…</div></div>
+      <div class="scrub">
+        <label for="scrub">Replay</label>
+        <input type="range" id="scrub" min="0" max="0" step="10" value="0">
+        <span class="mono" id="scrubval">live</span>
+        <label class="toggle" for="truth"><input type="checkbox" id="truth"> Show ground truth</label>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--hi)"></i>Risk ≥ 60</span>
+        <span><i style="background:var(--med)"></i>Risk 30–59</span>
+        <span><i style="background:var(--track)"></i>Lower risk</span>
+        <span><i style="border:1.5px dashed var(--accent);background:transparent"></i>Dark: where it could be now</span>
+        <span><i style="border:1.5px dashed var(--accent);border-radius:50%;background:transparent"></i>Outside port limits (OPL)</span>
+        <span>Approximate coastline · not for navigation</span>
+      </div>
+    </section>
+
+    <div class="rail">
+      <section class="panel" aria-label="Dark vessels">
+        <div class="ph"><h2>Transponder silent</h2><button class="sqlchip" data-q="dark">SQL</button></div>
+        <div class="dark-list" id="darklist"></div>
+      </section>
+      <section class="panel" aria-label="Alerts">
+        <div class="ph"><h2>Alerts</h2><span class="meta" id="alertmeta"></span><button class="sqlchip" data-q="alerts">SQL</button></div>
+        <div class="alerts" id="alerts"></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel" aria-label="Analysis">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="risk" aria-selected="true">Risk board</button>
+      <button class="tab" role="tab" data-tab="dossier" aria-selected="false">Dossier</button>
+      <button class="tab" role="tab" data-tab="notes" aria-selected="false">Analyst notes</button>
+      <button class="tab" role="tab" data-tab="console" aria-selected="false">SQL console</button>
+      <button class="tab" role="tab" data-tab="source" aria-selected="false">The application</button>
+    </div>
+
+    <div class="tabpanel" data-panel="risk">
+      <div class="ph" style="padding:0 0 10px;border:0"><span class="muted" style="font-size:13px">Score = ownership exposure + recent behaviour (decays over 12 h) + vessel profile. Click a row for the dossier.</span><button class="sqlchip" data-q="risk">SQL</button></div>
+      <div class="scroll-x"><table class="data" id="risktable"></table></div>
+      <div class="legend" style="border:0;padding:10px 0 0">
+        <span><i style="background:var(--hi)"></i>Ownership: sanctioned share via any path</span>
+        <span><i style="background:var(--accent)"></i>Behaviour: alerts, weighted and decayed</span>
+        <span><i style="background:var(--muted)"></i>Profile: age, open registry, re-flags</span>
+      </div>
+    </div>
+
+    <div class="tabpanel" data-panel="dossier" hidden><div id="dossier"></div></div>
+
+    <div class="tabpanel" data-panel="notes" hidden>
+      <form class="search" id="notesearch">
+        <input id="nq" type="search" placeholder="Full-text search, e.g. transfer, flag*, &quot;floating storage&quot;" value="flag*">
+        <button class="btn" type="submit">Search</button>
+        <button class="sqlchip" type="button" data-q="notes">SQL</button>
+      </form>
+      <div class="notes" id="notes"></div>
+      <form class="search" id="noteadd" style="margin-top:16px;border-top:1px solid var(--rule);padding-top:14px">
+        <select id="nvessel" aria-label="Vessel"></select>
+        <input id="nbody" placeholder="Add an observation (it becomes searchable immediately)" required>
+        <button class="btn" type="submit">Add note</button>
+      </form>
+    </div>
+
+    <div class="tabpanel" data-panel="console" hidden>
+      <div class="console">
+        <div class="presets" id="presets"></div>
+        <div style="min-width:0">
+          <textarea id="sql" spellcheck="false" aria-label="SQL"></textarea>
+          <div class="runbar">
+            <button class="btn primary" id="run">Run</button>
+            <span class="muted" style="font-size:12px">Ctrl/⌘ + Enter. Writes are real: the chart and alerts update.</span>
+            <span class="mono muted" id="runmeta" style="margin-left:auto;font-size:12px"></span>
+          </div>
+          <div id="out"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabpanel" data-panel="source" hidden>
+      <div class="ideas">
+        <div class="idea"><b>Constraints are validation</b><p>The IMO check digit, MMSI shape and allowed alert kinds are <code>CHECK</code> constraints. Bad data never gets in.</p></div>
+        <div class="idea"><b>Triggers are the detectors</b><p>Every <code>INSERT INTO ping</code> runs gap, spoof, rendezvous and loitering checks in the same transaction.</p></div>
+        <div class="idea"><b>Views are the analytics</b><p>Risk, darkness and exposure are views, so they are always current and every component is explainable.</p></div>
+        <div class="idea"><b>Graphs fit in SQL</b><p>A recursive CTE walks shell-company chains, multiplies stakes along each path and stops at cycles.</p></div>
+        <div class="idea"><b>The scenario is data</b><p>Scripted events are rows in <code>scenario</code>. The tick applies them with <code>UPDATE … FROM</code>.</p></div>
+        <div class="idea"><b>Evidence is immutable</b><p>A trigger aborts any attempt to edit a position report. Alert triage is written to an audit log by trigger.</p></div>
+      </div>
+      <div class="source" id="source"></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>SQLite <span id="sqlitever">—</span> compiled to JavaScript, running locally in this page.</span>
+    <span>Fictional data. Coastline and lanes are approximate.</span>
+    <span id="dbstats"></span>
+  </footer>
+</div>
+
+<script type="text/plain" id="sql-schema">-- ════════════════════════════════════════════════════════════════════
+--  DARKWATER · the database is the application
+--  Every rule, detector, score and simulation step below is SQL.
+--  The browser only renders query results.
+-- ════════════════════════════════════════════════════════════════════
+PRAGMA foreign_keys = ON;
+
+-- ── Reference data ──────────────────────────────────────────────────
+CREATE TABLE flag_state (
+  code          TEXT PRIMARY KEY CHECK (length(code) = 2),
+  name          TEXT NOT NULL,
+  open_registry INTEGER NOT NULL DEFAULT 0 CHECK (open_registry IN (0,1))
+);
+
+CREATE TABLE company (
+  id           INTEGER PRIMARY KEY,
+  name         TEXT NOT NULL UNIQUE,
+  jurisdiction TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('registered owner','holding','shell','beneficial owner','trust')),
+  sanctioned   INTEGER NOT NULL DEFAULT 0 CHECK (sanctioned IN (0,1))
+);
+
+-- Directed ownership graph: parent owns pct of child. Cycles allowed in data,
+-- the recursive CTE guards against them.
+CREATE TABLE ownership (
+  child_id  INTEGER NOT NULL REFERENCES company(id),
+  parent_id INTEGER NOT NULL REFERENCES company(id),
+  pct       REAL NOT NULL CHECK (pct > 0 AND pct <= 1),
+  PRIMARY KEY (child_id, parent_id),
+  CHECK (child_id <> parent_id)
+);
+
+-- The IMO number carries its own checksum. The database refuses a bad one.
+CREATE TABLE vessel (
+  mmsi     INTEGER PRIMARY KEY
+           CHECK (CAST(mmsi AS TEXT) GLOB '[2-7][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'),
+  imo      INTEGER NOT NULL UNIQUE CHECK (
+             imo BETWEEN 1000000 AND 9999999 AND
+             ( (imo/1000000)%10*7 + (imo/100000)%10*6 + (imo/10000)%10*5
+             + (imo/1000)%10*4   + (imo/100)%10*3    + (imo/10)%10*2 ) % 10 = imo % 10),
+  name     TEXT NOT NULL,
+  type     TEXT NOT NULL CHECK (type IN ('Crude tanker','Product tanker','Bunker tanker','Container','Bulk carrier','General cargo')),
+  flag     TEXT NOT NULL REFERENCES flag_state(code),
+  dwt      INTEGER NOT NULL CHECK (dwt > 0),
+  built    INTEGER NOT NULL CHECK (built BETWEEN 1970 AND 2026),
+  owner_id INTEGER NOT NULL REFERENCES company(id),
+  age      INTEGER GENERATED ALWAYS AS (2026 - built) VIRTUAL
+);
+
+CREATE TABLE flag_history (
+  mmsi  INTEGER NOT NULL REFERENCES vessel(mmsi),
+  flag  TEXT NOT NULL REFERENCES flag_state(code),
+  since INTEGER NOT NULL               -- minutes on the scenario clock (negative = before window)
+);
+
+-- Areas of interest as boxes. kind drives rule behaviour.
+CREATE TABLE zone (
+  name    TEXT PRIMARY KEY,
+  kind    TEXT NOT NULL CHECK (kind IN ('anchorage','opl','lane','edge')),
+  lat_min REAL, lat_max REAL, lon_min REAL, lon_max REAL,
+  CHECK (lat_min < lat_max AND lon_min < lon_max)
+);
+
+-- ── Time ────────────────────────────────────────────────────────────
+CREATE TABLE clock (
+  id   INTEGER PRIMARY KEY CHECK (id = 1),  -- exactly one row, ever
+  t    INTEGER NOT NULL,                    -- minutes since epoch below
+  epoch TEXT NOT NULL
+);
+
+-- ── Observations: append-only AIS position reports ─────────────────
+CREATE TABLE ping (
+  id     INTEGER PRIMARY KEY,
+  mmsi   INTEGER NOT NULL REFERENCES vessel(mmsi),
+  t      INTEGER NOT NULL,
+  lat    REAL NOT NULL CHECK (lat BETWEEN -90 AND 90),
+  lon    REAL NOT NULL CHECK (lon BETWEEN -180 AND 180),
+  sog    REAL NOT NULL CHECK (sog >= 0),     -- speed over ground, knots
+  cog    REAL NOT NULL,                      -- course over ground, degrees
+  status TEXT NOT NULL
+);
+CREATE INDEX ping_by_vessel ON ping(mmsi, t);
+CREATE INDEX ping_by_time   ON ping(t);
+CREATE TRIGGER ping_is_append_only BEFORE UPDATE ON ping
+BEGIN SELECT RAISE(ABORT, 'AIS reports are evidence: append-only'); END;
+
+-- ── Findings ────────────────────────────────────────────────────────
+CREATE TABLE alert (
+  id         INTEGER PRIMARY KEY,
+  t          INTEGER NOT NULL,
+  mmsi       INTEGER NOT NULL REFERENCES vessel(mmsi),
+  other_mmsi INTEGER REFERENCES vessel(mmsi),
+  kind       TEXT NOT NULL CHECK (kind IN ('AIS_GAP','IMPOSSIBLE_SPEED','STS_PROXIMITY','LOITER_OPL','FLAG_CHANGE')),
+  severity   TEXT NOT NULL CHECK (severity IN ('low','medium','high')),
+  bucket     INTEGER NOT NULL,      -- 6-hour window, used for de-duplication
+  detail     TEXT NOT NULL CHECK (json_valid(detail)),
+  status     TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','escalated','dismissed'))
+);
+CREATE UNIQUE INDEX alert_dedup ON alert(kind, mmsi, ifnull(other_mmsi,0), bucket);
+
+CREATE TABLE audit_log (
+  id INTEGER PRIMARY KEY,
+  at INTEGER NOT NULL,
+  entity TEXT NOT NULL,
+  entity_id INTEGER NOT NULL,
+  change TEXT NOT NULL CHECK (json_valid(change))
+);
+CREATE TRIGGER audit_alert_status AFTER UPDATE OF status ON alert
+WHEN OLD.status IS NOT NEW.status
+BEGIN
+  INSERT INTO audit_log(at, entity, entity_id, change)
+  VALUES ((SELECT t FROM clock), 'alert', NEW.id,
+          json_object('from', OLD.status, 'to', NEW.status, 'kind', NEW.kind, 'mmsi', NEW.mmsi));
+END;
+
+-- Analyst notes with full-text search (FTS4 in this SQLite build)
+CREATE VIRTUAL TABLE note USING fts4(mmsi, author, body, tokenize=porter);
+
+-- ── Detectors: triggers that read every incoming AIS report ────────
+-- Distance in nautical miles (equirectangular, accurate at strait scale):
+--   60 * sqrt(dlat² + (dlon·cos lat)²)
+
+-- 1. Transponder gaps and physically impossible jumps.
+CREATE TRIGGER detect_gap_and_jump AFTER INSERT ON ping
+BEGIN
+  INSERT OR IGNORE INTO alert(t, mmsi, kind, severity, bucket, detail)
+  SELECT NEW.t, NEW.mmsi,
+         CASE WHEN gap >= 60 THEN 'AIS_GAP' ELSE 'IMPOSSIBLE_SPEED' END,
+         CASE WHEN gap >= 360 OR kn > 40 THEN 'high' WHEN gap >= 120 THEN 'medium' ELSE 'low' END,
+         NEW.t / 360,
+         json_object('gap_min', gap, 'moved_nm', round(nm,1), 'implied_kn', round(kn,1),
+                     'from', json_array(round(plat,4), round(plon,4)),
+                     'to',   json_array(round(NEW.lat,4), round(NEW.lon,4)))
+  FROM (
+    SELECT p.t AS pt, p.lat AS plat, p.lon AS plon,
+           NEW.t - p.t AS gap,
+           60*sqrt(power(NEW.lat-p.lat,2) + power((NEW.lon-p.lon)*cos(radians(NEW.lat)),2)) AS nm,
+           60*sqrt(power(NEW.lat-p.lat,2) + power((NEW.lon-p.lon)*cos(radians(NEW.lat)),2))
+             / max((NEW.t - p.t)/60.0, 1/60.0) AS kn
+    FROM ping p
+    WHERE p.mmsi = NEW.mmsi AND p.id < NEW.id
+    ORDER BY p.id DESC LIMIT 1
+  )
+  WHERE (gap >= 60 OR kn > 30)
+    -- a vessel leaving and re-entering the coverage edge is not suspicious
+    AND NOT (EXISTS (SELECT 1 FROM zone z WHERE z.kind='edge' AND plon BETWEEN z.lon_min AND z.lon_max)
+         AND EXISTS (SELECT 1 FROM zone z WHERE z.kind='edge' AND NEW.lon BETWEEN z.lon_min AND z.lon_max));
+END;
+
+-- 2. Two slow vessels side by side, outside a designated anchorage.
+CREATE TRIGGER detect_sts AFTER INSERT ON ping
+WHEN NEW.sog < 2
+ AND NOT EXISTS (SELECT 1 FROM zone z WHERE z.kind = 'anchorage'
+                 AND NEW.lat BETWEEN z.lat_min AND z.lat_max
+                 AND NEW.lon BETWEEN z.lon_min AND z.lon_max)
+BEGIN
+  INSERT OR IGNORE INTO alert(t, mmsi, other_mmsi, kind, severity, bucket, detail)
+  SELECT NEW.t, min(NEW.mmsi, o.mmsi), max(NEW.mmsi, o.mmsi), 'STS_PROXIMITY', 'high', NEW.t / 360,
+         json_object('distance_m', round(1852*60*sqrt(power(NEW.lat-o.lat,2)
+                                     + power((NEW.lon-o.lon)*cos(radians(NEW.lat)),2))),
+                     'at', json_array(round(NEW.lat,4), round(NEW.lon,4)))
+  FROM ping o
+  WHERE o.t = NEW.t AND o.mmsi <> NEW.mmsi AND o.sog < 2
+    AND 60*sqrt(power(NEW.lat-o.lat,2) + power((NEW.lon-o.lon)*cos(radians(NEW.lat)),2)) < 0.4;
+END;
+
+-- 3. Loitering in the OPL: 5+ of the last 6 hours stationary inside the box.
+CREATE TRIGGER detect_loiter AFTER INSERT ON ping
+WHEN NEW.sog < 2 AND EXISTS (SELECT 1 FROM zone z WHERE z.kind='opl'
+       AND NEW.lat BETWEEN z.lat_min AND z.lat_max AND NEW.lon BETWEEN z.lon_min AND z.lon_max)
+BEGIN
+  INSERT OR IGNORE INTO alert(t, mmsi, kind, severity, bucket, detail)
+  SELECT NEW.t, NEW.mmsi, 'LOITER_OPL', 'medium', NEW.t / 360,
+         json_object('stationary_reports', n, 'window_h', 6)
+  FROM (SELECT count(*) AS n FROM ping p, zone z
+        WHERE z.kind='opl' AND p.mmsi = NEW.mmsi AND p.t > NEW.t - 360 AND p.sog < 2
+          AND p.lat BETWEEN z.lat_min AND z.lat_max AND p.lon BETWEEN z.lon_min AND z.lon_max)
+  WHERE n >= 30;
+END;
+
+-- 4. Re-flagging is recorded and raised.
+CREATE TRIGGER detect_reflag AFTER UPDATE OF flag ON vessel
+WHEN OLD.flag <> NEW.flag
+BEGIN
+  INSERT INTO flag_history(mmsi, flag, since) VALUES (NEW.mmsi, NEW.flag, (SELECT t FROM clock));
+  INSERT OR IGNORE INTO alert(t, mmsi, kind, severity, bucket, detail)
+  SELECT c.t, NEW.mmsi, 'FLAG_CHANGE',
+         CASE WHEN (SELECT open_registry FROM flag_state WHERE code = NEW.flag) THEN 'medium' ELSE 'low' END,
+         c.t / 360, json_object('from', OLD.flag, 'to', NEW.flag)
+  FROM clock c;
+END;
+
+-- ── Analysis views ──────────────────────────────────────────────────
+
+-- Latest report per vessel (window function)
+CREATE VIEW v_latest AS
+SELECT * FROM (
+  SELECT p.*, row_number() OVER (PARTITION BY mmsi ORDER BY t DESC, id DESC) AS rn FROM ping p
+) WHERE rn = 1;
+
+-- Beneficial ownership: walk the graph upward, multiply stakes along each path,
+-- sum across paths. Cycle-safe via the path string.
+CREATE VIEW v_ownership_paths AS
+WITH RECURSIVE chain(mmsi, company_id, share, depth, path) AS (
+  SELECT mmsi, owner_id, 1.0, 0, '/' || owner_id || '/' FROM vessel
+  UNION ALL
+  SELECT c.mmsi, o.parent_id, c.share * o.pct, c.depth + 1, c.path || o.parent_id || '/'
+  FROM chain c JOIN ownership o ON o.child_id = c.company_id
+  WHERE instr(c.path, '/' || o.parent_id || '/') = 0 AND c.depth < 12
+)
+SELECT c.mmsi, c.depth, c.path, c.share, co.id AS company_id, co.name, co.kind,
+       co.jurisdiction, co.sanctioned
+FROM chain c JOIN company co ON co.id = c.company_id;
+
+CREATE VIEW v_exposure AS
+SELECT v.mmsi,
+       min(1.0, ifnull(sum(p.share) FILTER (WHERE p.sanctioned = 1), 0)) AS sanctioned_share,
+       group_concat(DISTINCT CASE WHEN p.sanctioned THEN p.name END) AS sanctioned_parties
+FROM vessel v LEFT JOIN v_ownership_paths p ON p.mmsi = v.mmsi
+GROUP BY v.mmsi;
+
+-- Vessels whose transponder is silent right now, with how far they could have gone.
+CREATE VIEW v_dark AS
+SELECT l.mmsi, v.name, l.t AS last_t, c.t - l.t AS silent_min, l.lat, l.lon, l.sog, l.cog,
+       round((c.t - l.t) / 60.0 * max(l.sog, 12), 1) AS reach_nm
+FROM v_latest l JOIN vessel v USING (mmsi), clock c
+WHERE c.t - l.t >= 60
+  AND NOT EXISTS (SELECT 1 FROM zone z WHERE z.kind='edge' AND l.lon BETWEEN z.lon_min AND z.lon_max);
+
+-- Risk: explainable, every component returned alongside the total.
+CREATE VIEW v_risk AS
+WITH a AS (
+  SELECT v.mmsi,
+    sum(CASE a.kind WHEN 'STS_PROXIMITY' THEN 30 WHEN 'AIS_GAP' THEN 25 WHEN 'IMPOSSIBLE_SPEED' THEN 20
+                    WHEN 'LOITER_OPL' THEN 10 WHEN 'FLAG_CHANGE' THEN 12 END
+        * exp(-(c.t - a.t) / 720.0)) AS behaviour
+  FROM vessel v, clock c
+  JOIN alert a ON (a.mmsi = v.mmsi OR a.other_mmsi = v.mmsi) AND a.status <> 'dismissed'
+  GROUP BY v.mmsi
+)
+SELECT v.mmsi, v.name, v.type, v.flag, v.age,
+       round(45 * e.sanctioned_share, 1)                         AS ownership,
+       round(ifnull(a.behaviour, 0), 1)                          AS behaviour,
+       CASE WHEN v.age >= 20 THEN 8 ELSE 0 END
+         + 4 * f.open_registry
+         + 6 * (SELECT count(*) - 1 FROM flag_history h WHERE h.mmsi = v.mmsi) AS profile,
+       min(100, round(45 * e.sanctioned_share + ifnull(a.behaviour,0)
+         + CASE WHEN v.age >= 20 THEN 8 ELSE 0 END + 4 * f.open_registry
+         + 6 * (SELECT count(*) - 1 FROM flag_history h WHERE h.mmsi = v.mmsi))) AS score,
+       e.sanctioned_parties
+FROM vessel v
+JOIN v_exposure e USING (mmsi)
+JOIN flag_state f ON f.code = v.flag
+LEFT JOIN a USING (mmsi);
+
+-- ── Simulation state (ground truth the detectors never see) ────────
+CREATE TABLE sim (
+  mmsi INTEGER PRIMARY KEY REFERENCES vessel(mmsi),
+  lat REAL, lon REAL, sog REAL, cog REAL,
+  mode TEXT CHECK (mode IN ('transit','anchor','goto')),
+  cruise REAL,                 -- preferred speed, knots
+  tlat REAL, tlon REAL,        -- anchor point or destination
+  dark_until INTEGER DEFAULT 0,
+  spoof_dlat REAL DEFAULT 0, spoof_dlon REAL DEFAULT 0
+);
+
+-- The scenario is data. Each row is an instruction the clock applies when it arrives.
+CREATE TABLE scenario (
+  t INTEGER NOT NULL, mmsi INTEGER NOT NULL REFERENCES vessel(mmsi),
+  mode TEXT, cog REAL, tlat REAL, tlon REAL, dark_for INTEGER,
+  spoof_dlat REAL, spoof_dlon REAL, new_flag TEXT, memo TEXT
+);
+</script>
+<script type="text/plain" id="sql-seed">-- ── Seed: a fictional day in the Singapore Strait ───────────────────
+INSERT INTO clock VALUES (1, 0, '2026-10-20 00:00');
+
+INSERT INTO flag_state VALUES
+ ('SG','Singapore',0),('HK','Hong Kong',0),('LR','Liberia',1),('MH','Marshall Islands',1),
+ ('PA','Panama',1),('KM','Comoros',1),('GA','Gabon',1),('CM','Cameroon',1);
+
+INSERT INTO zone VALUES
+ ('Eastern OPL',           'opl',       1.255, 1.345, 104.46, 104.64),
+ ('Western Anchorage',     'anchorage', 1.222, 1.250, 103.86, 104.00),
+ ('TSS Eastbound',         'lane',      1.180, 1.198, 103.55, 104.95),
+ ('TSS Westbound',         'lane',      1.204, 1.222, 103.55, 104.95),
+ ('West coverage edge',    'edge',      0.90,  1.60,  103.40, 103.64),
+ ('East coverage edge',    'edge',      0.90,  1.60,  104.86, 105.10);
+
+INSERT INTO company VALUES
+ (1,'Aurora Spirit Maritime Ltd','MH','registered owner',0),
+ (2,'Halcyon Tanker Holdings FZE','AE','holding',0),
+ (3,'Ostrava Trust Services Ltd','SC','trust',0),
+ (4,'Corvane Energy Group','undisclosed','beneficial owner',1),
+ (5,'Kestrel Shipping SA','KM','registered owner',0),
+ (6,'Bluefin Holdings Ltd','HK','holding',0),
+ (7,'Tidewater Family Office','CY','beneficial owner',0),
+ (8,'Bahari Queen Shipping Inc','LR','registered owner',0),
+ (9,'Mirovia Holdings','AE','shell',0),
+ (10,'Sable Point Investments','undisclosed','beneficial owner',1),
+ (11,'Pelican Star Tankers Ltd','MH','registered owner',0),
+ (12,'Seaborne Petroleum Partners','GR','beneficial owner',0),
+ (13,'Merlion Container Lines','SG','registered owner',0),
+ (14,'Harmony Ocean Shipping','HK','registered owner',0),
+ (15,'Avocet Bulk Carriers','GR','registered owner',0),
+ (16,'Tasman Tankers Pty','AU','registered owner',0),
+ (17,'Cormorant Dry Bulk SA','PA','registered owner',0),
+ (18,'Straits Marine Energy','SG','registered owner',0),
+ (19,'Jade Line Holdings','HK','registered owner',0),
+ (20,'Lyra Navigation Co','LR','registered owner',0),
+ (21,'Koral Shipping','PA','registered owner',0),
+ (22,'Lion City Bunkering','SG','registered owner',0),
+ (23,'Heron Bulk Partners','PA','registered owner',0),
+ (24,'Hua Yang Petroleum Shipping','HK','registered owner',0),
+ (25,'Ostrava Nominees (Seychelles)','SC','shell',0);
+
+INSERT INTO ownership VALUES
+ (1, 2, 1.00),   -- Aurora Spirit Maritime ← Halcyon (100%)
+ (2, 4, 0.60),   -- Halcyon ← Corvane (60%)
+ (2, 3, 0.40),   -- Halcyon ← Ostrava Trust (40%)
+ (3, 25, 1.00),  -- Ostrava Trust ← Ostrava Nominees
+ (25, 4, 0.50),  -- Ostrava Nominees ← Corvane (50%)  … a second, hidden path
+ (25, 3, 0.50),  -- … and a circular holding back to the trust
+ (5, 6, 1.00),   -- Kestrel Shipping ← Bluefin
+ (6, 4, 0.25),   -- Bluefin ← Corvane (25%)
+ (6, 7, 0.75),   -- Bluefin ← Tidewater
+ (8, 9, 1.00),   -- Bahari Queen Shipping ← Mirovia
+ (9, 10, 1.00),  -- Mirovia ← Sable Point
+ (11, 12, 1.00); -- Pelican Star ← Seaborne
+
+INSERT INTO vessel(mmsi, imo, name, type, flag, dwt, built, owner_id) VALUES
+ (563011200, 9753117, 'MERLION GRACE',   'Container',      'SG', 112000, 2019, 13),
+ (477120300, 9588213, 'OCEAN HARMONY',   'Container',      'HK',  86000, 2013, 14),
+ (636018800, 9418200, 'CAPE AVOCET',     'Bulk carrier',   'LR', 180000, 2010, 15),
+ (538009100, 9833008, 'TASMAN BREEZE',   'Product tanker', 'MH',  50000, 2019, 16),
+ (351204000, 9304124, 'SILVER CORMORANT','Bulk carrier',   'PA',  76000, 2005, 17),
+ (563044500, 9710024, 'STRAITS PIONEER', 'Product tanker', 'SG',  48000, 2016, 18),
+ (477330900, 9277606, 'JADE CRESCENT',   'Container',      'HK',  68000, 2004, 19),
+ (636092100, 9205770, 'NORTHERN LYRA',   'Bulk carrier',   'LR',  82000, 2001, 20),
+ (538077300, 9166039, 'PELICAN STAR',    'Crude tanker',   'MH', 105000, 1999, 11),
+ (352118000, 9260457, 'KORAL WIND',      'General cargo',  'PA',  12000, 2003, 21),
+ (563120700, 9129885, 'LION CITY ONE',   'Bunker tanker',  'SG',   6500, 1998, 22),
+ (563200100, 9120047, 'HARBOUR SPRITE',  'Bunker tanker',  'SG',   5200, 1997, 22),
+ (351777000, 9120499, 'GOLDEN HERON',    'Bulk carrier',   'PA',  58000, 1997, 23),
+ (616000420, 9043316, 'KESTREL 7',       'Crude tanker',   'KM', 159000, 1994, 5),
+ (626000350, 9051882, 'AURORA SPIRIT',   'Crude tanker',   'GA', 300000, 1995, 1),
+ (613005600, 9033672, 'BAHARI QUEEN',    'Crude tanker',   'CM', 115000, 1993, 8),
+ (477551000, 9009877, 'HUA YANG 9',      'Product tanker', 'HK',  45000, 1992, 24);
+
+-- Flag history: everyone has a current flag; two have hopped before.
+INSERT INTO flag_history SELECT mmsi, flag, -525600*5 FROM vessel;
+INSERT INTO flag_history VALUES
+ (626000350,'PA',-525600*3),(626000350,'KM',-525600),   -- Aurora: Panama → Comoros → Gabon
+ (616000420,'LR',-525600*2);                            -- Kestrel: Liberia → Comoros
+UPDATE flag_history SET since = -60*24*120 WHERE mmsi = 626000350 AND flag = 'GA';
+UPDATE flag_history SET since = -60*24*200 WHERE mmsi = 616000420 AND flag = 'KM';
+
+-- Initial kinematics (ground truth). Eastbound lane ≈ 1.189°N, westbound ≈ 1.213°N.
+INSERT INTO sim(mmsi, lat, lon, sog, cog, mode, cruise, tlat, tlon) VALUES
+ (563011200, 1.189, 103.70,  16, 90, 'transit', 16, NULL, NULL),
+ (477120300, 1.213, 104.80,  15,270, 'transit', 15, NULL, NULL),
+ (636018800, 1.190, 104.30,  11, 90, 'transit', 11, NULL, NULL),
+ (538009100, 1.212, 104.20,  13,270, 'transit', 13, NULL, NULL),
+ (351204000, 1.188, 104.75,  10, 90, 'transit', 10, NULL, NULL),
+ (563044500, 1.214, 103.90,  12,270, 'transit', 12, NULL, NULL),
+ (477330900, 1.190, 103.95,  17, 90, 'transit', 17, NULL, NULL),
+ (636092100, 1.213, 104.55,  12,270, 'transit', 12, NULL, NULL),
+ (538077300, 1.188, 104.05,  11, 90, 'transit', 11, NULL, NULL),
+ (352118000, 1.214, 103.62,   9,270, 'transit',  9, NULL, NULL),
+ (563120700, 1.2380,103.900, 0.2, 0, 'anchor',  10, 1.2380, 103.900),
+ (563200100, 1.2384,103.9030,0.2, 0, 'anchor',  10, 1.2384, 103.9030),
+ (351777000, 1.2310,103.960, 0.2, 0, 'anchor',  10, 1.2310, 103.960),
+ (616000420, 1.3050,104.548, 0.3, 0, 'anchor',  10, 1.3050, 104.548),
+ (626000350, 1.189, 103.62,   8, 90, 'transit',  9, NULL, NULL),
+ (613005600, 1.335, 104.80,  10,240, 'goto',    10, 1.3082, 104.5455),
+ (477551000, 1.2700,104.610, 0.2, 0, 'anchor',  10, 1.2700, 104.610);
+
+-- The script. Times are minutes after 2026-10-20 00:00 UTC.
+INSERT INTO scenario(t, mmsi, mode, cog, tlat, tlon, dark_for, spoof_dlat, spoof_dlon, new_flag, memo) VALUES
+ (240, 538077300, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'CM',  'Pelican Star re-flags mid-voyage'),
+ (300, 626000350, 'goto', NULL, 1.3068, 104.5462, 540, NULL, NULL, NULL, 'Aurora Spirit goes dark, diverts to OPL'),
+ (330, 636092100, NULL, NULL, NULL, NULL, NULL, 0.21, -0.12, NULL, 'Northern Lyra transponder reports a false position'),
+ (380, 636092100, NULL, NULL, NULL, NULL, NULL, 0, 0, NULL, 'Northern Lyra reports truthfully again'),
+ (660, 613005600, 'transit', 60, NULL, NULL, NULL, NULL, NULL, NULL, 'Bahari Queen departs OPL'),
+ (1020, 626000350, 'transit', 85, NULL, NULL, NULL, NULL, NULL, NULL, 'Aurora Spirit departs OPL laden'),
+ (1140, 616000420, 'goto', NULL, 1.2650, 104.500, NULL, NULL, NULL, NULL, 'Kestrel 7 shifts berth');
+
+INSERT INTO note(mmsi, author, body) VALUES
+ ('626000350','R. Okafor','AURORA SPIRIT: very large crude carrier, third flag in three years. Previously traded as a Panama-flag vessel before switching to Comoros and then Gabon. Insurer of record unknown.'),
+ ('616000420','R. Okafor','KESTREL 7 has held position in the Eastern OPL for 11 days with draft unchanged. Pattern consistent with floating storage awaiting ship-to-ship transfer.'),
+ ('613005600','L. Tan','BAHARI QUEEN declared destination changed twice in 48 hours. Manager unresponsive to port agent queries.'),
+ ('538077300','L. Tan','PELICAN STAR scheduled for re-flagging; registry paperwork filed with Cameroon. Watch for MMSI change.'),
+ ('636092100','M. Varga','NORTHERN LYRA historically reliable reporter. Any position anomaly more likely equipment fault or spoofing than evasion.'),
+ ('477551000','M. Varga','HUA YANG 9 waiting on bunker delivery at the OPL. Charterer confirmed, legitimate waiting time.'),
+ ('563120700','L. Tan','LION CITY ONE and HARBOUR SPRITE are licensed bunker craft; routinely moored alongside each other in the Western Anchorage.');
+</script>
+<script type="text/plain" id="sql-tick">-- ── One tick = ten minutes of the world, entirely in SQL ───────────
+UPDATE clock SET t = t + 10;
+
+-- 1. Apply scenario rows that fall due (UPDATE … FROM)
+UPDATE sim SET
+  mode       = coalesce(s.mode, sim.mode),
+  cog        = coalesce(s.cog, sim.cog),
+  tlat       = coalesce(s.tlat, sim.tlat),
+  tlon       = coalesce(s.tlon, sim.tlon),
+  dark_until = coalesce(c.t + s.dark_for, sim.dark_until),
+  spoof_dlat = coalesce(s.spoof_dlat, sim.spoof_dlat),
+  spoof_dlon = coalesce(s.spoof_dlon, sim.spoof_dlon)
+FROM scenario s, clock c
+WHERE s.mmsi = sim.mmsi AND s.t = c.t;
+
+UPDATE vessel SET flag = s.new_flag
+FROM scenario s, clock c
+WHERE s.mmsi = vessel.mmsi AND s.t = c.t AND s.new_flag IS NOT NULL;
+
+-- 2. Decide course and speed for each mode
+UPDATE sim SET
+  cog = CASE mode
+    WHEN 'goto' THEN (degrees(atan2((tlon - lon) * cos(radians(lat)), tlat - lat)) + 360) % 360
+    WHEN 'anchor' THEN CASE
+      WHEN 60*sqrt(power(tlat-lat,2) + power((tlon-lon)*cos(radians(lat)),2)) > 0.08
+        THEN (degrees(atan2((tlon - lon) * cos(radians(lat)), tlat - lat)) + 360) % 360
+      ELSE abs(random()) % 360 END
+    ELSE cog + (abs(random()) % 5) - 2 END,
+  sog = CASE mode
+    WHEN 'goto' THEN min(cruise, max(1.0,
+          4 * 60*sqrt(power(tlat-lat,2) + power((tlon-lon)*cos(radians(lat)),2))))
+    WHEN 'anchor' THEN 0.1 + (abs(random()) % 30) / 100.0
+    ELSE cruise + ((abs(random()) % 100) - 50) / 100.0 END;
+
+-- keep transit headings honest to their lane
+UPDATE sim SET cog = CASE WHEN cog BETWEEN 0 AND 180 THEN max(min(cog, 95), 55) ELSE max(min(cog, 275), 240) END
+WHERE mode = 'transit';
+
+-- 3. Move: knots × 10 min → nautical miles → degrees
+UPDATE sim SET
+  lat = lat + sog * (10/60.0) * cos(radians(cog)) / 60.0,
+  lon = lon + sog * (10/60.0) * sin(radians(cog)) / (60.0 * cos(radians(lat)));
+
+-- steer transiting ships back onto their lane centreline
+UPDATE sim SET lat = lat + (CASE WHEN cog < 180 THEN 1.189 ELSE 1.213 END - lat) * 0.15
+WHERE mode = 'transit' AND lon BETWEEN 103.6 AND 104.4;
+
+-- 4. Arrivals become anchored; ships leaving the area re-enter from the far side
+UPDATE sim SET mode = 'anchor', sog = 0.2
+WHERE mode = 'goto' AND 60*sqrt(power(tlat-lat,2) + power((tlon-lon)*cos(radians(lat)),2)) < 0.15;
+
+UPDATE sim SET lon = 103.56, lat = 1.189, cog = 90 WHERE mode = 'transit' AND lon > 104.94;
+UPDATE sim SET lon = 104.93, lat = 1.213, cog = 270 WHERE mode = 'transit' AND lon < 103.55;
+
+-- 5. Transmit. Dark ships stay silent; spoofers lie; ~3% of reports are lost at random.
+INSERT INTO ping(mmsi, t, lat, lon, sog, cog, status)
+SELECT s.mmsi, c.t,
+       round(s.lat + s.spoof_dlat, 5), round(s.lon + s.spoof_dlon, 5),
+       round(s.sog, 1), round(s.cog),
+       CASE WHEN s.mode = 'anchor' THEN 'At anchor' ELSE 'Under way' END
+FROM sim s, clock c
+WHERE s.dark_until <= c.t
+  AND abs(random()) % 100 >= 3
+ORDER BY s.mmsi;
+</script>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-asm.js"></script>
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const SCHEMA = $('#sql-schema').textContent, SEED = $('#sql-seed').textContent, TICK = $('#sql-tick').textContent;
+const PRELOAD = 48, END = 2880;
+let SQL, db, now = 0, viewT = null, selected = 626000350, playing = null, lastTickMs = 0, tab = 'risk';
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function q(sql, params) {
+  const st = db.prepare(sql); if (params) st.bind(params);
+  const rows = []; while (st.step()) rows.push(st.getAsObject()); st.free(); return rows;
+}
+const one = (sql, p) => q(sql, p)[0];
+
+// ── time ──
+const EPOCH = Date.UTC(2026, 9, 20, 0, 0);
+const MON = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function stamp(t, long) {
+  const d = new Date(EPOCH + t * 60000), hh = String(d.getUTCHours()).padStart(2,'0'), mm = String(d.getUTCMinutes()).padStart(2,'0');
+  return long ? `${d.getUTCDate()} ${MON[d.getUTCMonth()]} ${d.getUTCFullYear()} · ${hh}:${mm}Z` : (d.getUTCDate() !== 20 ? `${d.getUTCDate()}/` : '') + `${hh}:${mm}Z`;
+}
+const dur = m => m >= 60 ? `${Math.floor(m/60)}h ${String(m%60).padStart(2,'0')}m` : `${m}m`;
+
+// ── the queries behind each panel (shown verbatim by the SQL chips) ──
+const Q = {
+positions: `-- Last report per vessel at the replay time, with live risk score
+SELECT p.mmsi, v.name, p.t, p.lat, p.lon, p.sog, p.cog, p.status, r.score
+FROM (
+  SELECT *, row_number() OVER (PARTITION BY mmsi ORDER BY t DESC, id DESC) AS rn
+  FROM ping WHERE t <= :t
+) p
+JOIN vessel v USING (mmsi)
+JOIN v_risk r USING (mmsi)
+WHERE p.rn = 1;`,
+tracks: `SELECT mmsi, t, lat, lon FROM ping WHERE t BETWEEN :t - 240 AND :t ORDER BY mmsi, t;`,
+dark: `-- Vessels silent for an hour or more, away from the coverage edge.
+-- reach_nm: how far they could be from where they were last seen.
+SELECT * FROM v_dark ORDER BY silent_min DESC;`,
+alerts: `SELECT a.id, a.t, a.kind, a.severity, a.status, a.detail,
+       a.mmsi, v.name, a.other_mmsi, o.name AS other_name
+FROM alert a
+JOIN vessel v ON v.mmsi = a.mmsi
+LEFT JOIN vessel o ON o.mmsi = a.other_mmsi
+ORDER BY a.t DESC, a.id DESC
+LIMIT 80;`,
+risk: `SELECT mmsi, name, type, flag, age, ownership, behaviour, profile, score, sanctioned_parties
+FROM v_risk
+ORDER BY score DESC, name;`,
+notes: `SELECT n.mmsi, v.name, n.author,
+       snippet(note, '[[', ']]', ' … ') AS excerpt
+FROM note n JOIN vessel v ON v.mmsi = CAST(n.mmsi AS INTEGER)
+WHERE note MATCH :q;`,
+};
+
+const PRESETS = [
+ ['Look inside', [
+  ['The gap & jump detector', `-- This trigger runs on every AIS report. It IS the detector.\nSELECT sql FROM sqlite_master WHERE name = 'detect_gap_and_jump';`],
+  ['Ownership paths of AURORA SPIRIT', `-- Recursive CTE output: every path from the vessel up to its owners.\n-- share = product of stakes along that path.\nSELECT depth, name, kind, jurisdiction, round(share, 3) AS share, sanctioned, path\nFROM v_ownership_paths\nWHERE mmsi = 626000350\nORDER BY path;`],
+  ['Longest silences (window function)', `-- Time and distance between consecutive reports for every vessel.\nSELECT v.name, p.t,\n       p.t - lag(p.t) OVER w AS minutes_since_last,\n       round(60*sqrt(power(p.lat - lag(p.lat) OVER w, 2)\n         + power((p.lon - lag(p.lon) OVER w) * cos(radians(p.lat)), 2)), 1) AS nm_since_last\nFROM ping p JOIN vessel v USING (mmsi)\nWINDOW w AS (PARTITION BY p.mmsi ORDER BY p.t)\nORDER BY minutes_since_last DESC\nLIMIT 10;`],
+  ['Reported vs true position', `-- The detectors only see ping. The sim table holds ground truth.\nSELECT v.name, c.t - l.t AS silent_min,\n       round(60*sqrt(power(s.lat - l.lat, 2)\n         + power((s.lon - l.lon) * cos(radians(s.lat)), 2)), 1) AS truth_offset_nm,\n       s.mode AS actually_doing\nFROM sim s JOIN v_latest l USING (mmsi) JOIN vessel v USING (mmsi), clock c\nORDER BY truth_offset_nm DESC\nLIMIT 6;`],
+  ['The scenario script', `SELECT strftime('%d %H:%M', c.epoch, '+' || s.t || ' minutes') AS at_utc,\n       v.name, s.memo,\n       CASE WHEN s.t <= c.t THEN 'done' ELSE 'pending' END AS state\nFROM scenario s JOIN vessel v USING (mmsi), clock c\nORDER BY s.t;`],
+  ['Query plan uses the index', `EXPLAIN QUERY PLAN\nSELECT * FROM ping WHERE mmsi = 626000350 AND t > 300;`],
+ ]],
+ ['Try to break it', [
+  ['Insert a vessel with a bad IMO', `-- The last digit of an IMO number is a checksum. 9300002 is wrong.\n-- Change it to 9300001 and run again: the vessel is accepted.\nINSERT INTO vessel(mmsi, imo, name, type, flag, dwt, built, owner_id)\nVALUES (563999000, 9300002, 'TEST CARRIER', 'Container', 'SG', 20000, 2020, 13);`],
+  ['Tamper with evidence', `UPDATE ping SET lat = 1.0 WHERE mmsi = 626000350;`],
+  ['Invent an alert kind', `INSERT INTO alert(t, mmsi, kind, severity, bucket, detail)\nVALUES (0, 626000350, 'GUT_FEELING', 'high', 0, '{}');`],
+ ]],
+ ['What if', [
+  ['Corvane is delisted', `-- Every risk score is a view, so this re-scores instantly.\nUPDATE company SET sanctioned = 0 WHERE name = 'Corvane Energy Group';\nSELECT name, ownership, score FROM v_risk ORDER BY score DESC LIMIT 6;`],
+  ['Pelican Star re-flags again', `-- The detect_reflag trigger writes history and raises an alert.\nUPDATE vessel SET flag = 'KM' WHERE name = 'PELICAN STAR';\nSELECT * FROM flag_history WHERE mmsi = 538077300 ORDER BY since;`],
+  ['Tighten the STS rule to 250 m', `-- Detectors are schema objects you can redefine at runtime.\nDROP TRIGGER detect_sts;\nCREATE TRIGGER detect_sts AFTER INSERT ON ping\nWHEN NEW.sog < 2 AND NOT EXISTS (SELECT 1 FROM zone z WHERE z.kind = 'anchorage'\n  AND NEW.lat BETWEEN z.lat_min AND z.lat_max AND NEW.lon BETWEEN z.lon_min AND z.lon_max)\nBEGIN\n  INSERT OR IGNORE INTO alert(t, mmsi, other_mmsi, kind, severity, bucket, detail)\n  SELECT NEW.t, min(NEW.mmsi, o.mmsi), max(NEW.mmsi, o.mmsi), 'STS_PROXIMITY', 'high', NEW.t / 360,\n    json_object('distance_m', round(1852*60*sqrt(power(NEW.lat-o.lat,2) + power((NEW.lon-o.lon)*cos(radians(NEW.lat)),2))))\n  FROM ping o\n  WHERE o.t = NEW.t AND o.mmsi <> NEW.mmsi AND o.sog < 2\n    AND 1852*60*sqrt(power(NEW.lat-o.lat,2) + power((NEW.lon-o.lon)*cos(radians(NEW.lat)),2)) < 250;\nEND;\nSELECT 'detect_sts now fires under 250 m' AS result;`],
+  ['Audit log of triage', `SELECT strftime('%H:%M', c.epoch, '+' || l.at || ' minutes') AS at_utc,\n       l.entity, l.entity_id, json_extract(l.change, '$.kind') AS kind,\n       json_extract(l.change, '$.from') AS from_status, json_extract(l.change, '$.to') AS to_status\nFROM audit_log l, clock c ORDER BY l.id DESC;`],
+ ]],
+];
+
+// ── SQL highlighter for display ──
+const KW = /\b(SELECT|FROM|WHERE|JOIN|LEFT|ON|USING|AND|OR|NOT|IN|IS|NULL|AS|ORDER|BY|GROUP|LIMIT|DESC|ASC|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|VIEW|INDEX|UNIQUE|TRIGGER|AFTER|BEFORE|BEGIN|END|WHEN|THEN|ELSE|CASE|EXISTS|BETWEEN|WITH|RECURSIVE|UNION|ALL|OVER|PARTITION|WINDOW|FILTER|PRIMARY|KEY|REFERENCES|CHECK|DEFAULT|GENERATED|ALWAYS|VIRTUAL|STORED|INTEGER|REAL|TEXT|RAISE|ABORT|IGNORE|DISTINCT|EXPLAIN|QUERY|PLAN|DROP|PRAGMA|USING|OF)\b/gi;
+function hl(sql) {
+  const out = []; const re = /(--[^\n]*)|('(?:[^']|'')*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]+)|([\s\S])/g; let m;
+  while ((m = re.exec(sql))) {
+    if (m[1]) out.push(`<span class="tok-cm">${esc(m[1])}</span>`);
+    else if (m[2]) out.push(`<span class="tok-str">${esc(m[2])}</span>`);
+    else if (m[3]) out.push(`<span class="tok-num">${m[3]}</span>`);
+    else if (m[4]) out.push(new RegExp(`^${KW.source}$`, 'i').test(m[4]) ? `<span class="tok-kw">${m[4]}</span>` : m[4]);
+    else out.push(esc(m[5]));
+  }
+  return out.join('');
+}
+
+// ── boot / reset ──
+function build(done) {
+  db && db.close();
+  db = new SQL.Database();
+  db.exec(SCHEMA); db.exec(SEED);
+  let i = 0;
+  (function chunk() {
+    const t0 = performance.now();
+    while (i < PRELOAD && performance.now() - t0 < 40) { db.exec(TICK); i++; }
+    $('#clockmeta').textContent = `simulating… ${Math.round(i / PRELOAD * 100)}%`;
+    if (i < PRELOAD) requestAnimationFrame(chunk); else done();
+  })();
+}
+
+function tick(n) {
+  for (let i = 0; i < n; i++) {
+    if (now >= END) break;
+    const t0 = performance.now(); db.exec(TICK); lastTickMs = performance.now() - t0;
+    now = one('SELECT t FROM clock').t;
+  }
+  viewT = null; refresh();
+}
+
+function refresh() {
+  now = one('SELECT t FROM clock').t;
+  const s = $('#scrub'); s.max = now; if (viewT === null) s.value = now;
+  const T = viewT ?? now;
+  $('#clock').textContent = stamp(now, true);
+  const next = one('SELECT min(t) AS t FROM scenario WHERE t > (SELECT t FROM clock)');
+  const st = one('SELECT (SELECT count(*) FROM ping) AS pings, (SELECT count(*) FROM alert) AS alerts');
+  $('#clockmeta').textContent = lastTickMs ? `last tick ${lastTickMs.toFixed(0)} ms · ${st.pings.toLocaleString()} reports` : `${st.pings.toLocaleString()} reports in store`;
+  $('#scrubval').textContent = viewT === null ? 'live' : stamp(T);
+  $('#truth').disabled = viewT !== null;
+  $('#dbstats').textContent = `${st.pings.toLocaleString()} position reports · ${st.alerts} alerts` + (next.t ? ` · next scripted event ${stamp(next.t)}` : ' · scenario complete');
+  $('#b10').disabled = $('#b60').disabled = now >= END;
+  drawMap(T); renderDark(); renderAlerts(); renderRisk();
+  if (tab === 'dossier') renderDossier();
+  if (tab === 'source') renderSource();
+}
+
+// ── chart ──
+const B = { lon0: 103.55, lon1: 104.95, lat0: 0.95, lat1: 1.55 };
+const KX = Math.cos(1.25 * Math.PI / 180);
+const LAND = [
+  [[103.60,1.30],[103.64,1.27],[103.70,1.25],[103.80,1.262],[103.86,1.268],[103.95,1.29],[104.03,1.33],[104.04,1.39],[103.98,1.42],[103.90,1.43],[103.80,1.445],[103.70,1.44],[103.64,1.40],[103.60,1.35]],
+  [[103.55,1.56],[103.55,1.45],[103.62,1.465],[103.75,1.475],[103.90,1.465],[104.00,1.43],[104.10,1.41],[104.20,1.375],[104.28,1.362],[104.30,1.42],[104.27,1.50],[104.25,1.56]],
+  [[103.88,1.10],[103.92,1.14],[104.00,1.155],[104.10,1.15],[104.15,1.10],[104.12,1.02],[104.02,0.97],[103.92,1.01]],
+  [[103.55,1.05],[103.60,1.12],[103.67,1.10],[103.66,0.99],[103.58,0.96],[103.55,0.97]],
+  [[104.20,1.11],[104.35,1.155],[104.50,1.15],[104.62,1.11],[104.67,1.00],[104.55,0.95],[104.30,0.95],[104.22,1.02]],
+];
+let geo = null, hits = [];
+function setupCanvas() {
+  const c = $('#map'), w = c.clientWidth || c.parentElement.clientWidth;
+  const h = Math.round(w * (B.lat1 - B.lat0) / ((B.lon1 - B.lon0) * KX));
+  const dpr = window.devicePixelRatio || 1;
+  c.style.height = h + 'px'; c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  geo = { w, h, dpr, x: lon => (lon - B.lon0) / (B.lon1 - B.lon0) * w, y: lat => (B.lat1 - lat) / (B.lat1 - B.lat0) * h, nm: w / ((B.lon1 - B.lon0) * KX * 60) };
+}
+function tier(score) { return score >= 60 ? css('--hi') : score >= 30 ? css('--med') : css('--track'); }
+
+function drawMap(T) {
+  if (!geo) setupCanvas();
+  const c = $('#map'), g = c.getContext('2d'), { w, h, x, y, nm, dpr } = geo;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = css('--water'); g.fillRect(0, 0, w, h);
+  const font = (sz, wt = 500, fam = css('--mono')) => `${wt} ${sz}px ${fam}`;
+
+  // graticule
+  g.strokeStyle = css('--rule'); g.lineWidth = 1; g.fillStyle = css('--muted'); g.font = font(10);
+  for (let lo = 103.6; lo < B.lon1; lo += 0.1) { const px = Math.round(x(lo)) + .5; g.beginPath(); g.moveTo(px, 0); g.lineTo(px, h); g.stroke();
+    const d = Math.floor(lo + 1e-9), m = Math.round((lo - d) * 60); if (m % 12 === 0) g.fillText(`${d}°${String(m).padStart(2,'0')}′E`, px + 3, h - 5); }
+  for (let la = 1.0; la < B.lat1; la += 0.1) { const py = Math.round(y(la)) + .5; g.beginPath(); g.moveTo(0, py); g.lineTo(w, py); g.stroke();
+    const d = Math.floor(la + 1e-9), m = Math.round((la - d) * 60); g.fillText(`${d}°${String(m).padStart(2,'0')}′N`, 4, py - 3); }
+
+  // land
+  g.fillStyle = css('--land'); g.strokeStyle = css('--land-edge'); g.lineWidth = 1;
+  for (const poly of LAND) { g.beginPath(); poly.forEach(([lo, la], i) => i ? g.lineTo(x(lo), y(la)) : g.moveTo(x(lo), y(la))); g.closePath(); g.fill(); g.stroke(); }
+  g.fillStyle = css('--muted'); g.font = font(11, 600, css('--display'));
+  [['SINGAPORE',103.80,1.36],['JOHOR',104.05,1.50],['BATAM',103.98,1.07],['BINTAN',104.42,1.05]].forEach(([n, lo, la]) => { g.fillText(n, x(lo) - g.measureText(n).width / 2, y(la)); });
+  // Pedra Branca light
+  g.fillStyle = css('--ink'); g.beginPath(); g.arc(x(104.406), y(1.330), 2, 0, 7); g.fill();
+  g.font = font(9); g.fillStyle = css('--muted'); g.fillText('Lt', x(104.406) + 4, y(1.330) + 3);
+
+  // zones
+  const zones = q("SELECT * FROM zone");
+  for (const z of zones) {
+    const X0 = x(z.lon_min), X1 = x(z.lon_max), Y0 = y(z.lat_max), Y1 = y(z.lat_min);
+    if (z.kind === 'lane') { g.strokeStyle = css('--track'); g.globalAlpha = .35; g.setLineDash([2, 4]); g.beginPath(); g.moveTo(X0, (Y0+Y1)/2); g.lineTo(X1, (Y0+Y1)/2); g.stroke(); g.globalAlpha = 1; g.setLineDash([]); }
+    else if (z.kind === 'edge') { g.fillStyle = css('--water-deep'); g.fillRect(X0, 0, X1 - X0, h); }
+    else {
+      g.strokeStyle = css('--accent'); g.lineWidth = 1.5; g.setLineDash(z.kind === 'opl' ? [6, 4] : [2, 3]);
+      g.strokeRect(X0, Y0, X1 - X0, Y1 - Y0); g.setLineDash([]); g.lineWidth = 1;
+      g.fillStyle = css('--accent'); g.font = font(10, 600);
+      g.fillText(z.name.toUpperCase(), X0 + 4, Y0 - 4);
+    }
+  }
+  g.fillStyle = css('--muted'); g.font = font(9);
+  g.fillText('COVERAGE EDGE', x(103.555), 12); g.fillText('COVERAGE EDGE', x(104.865), 12);
+  g.fillText('← westbound', x(103.70), y(1.213) - 4); g.fillText('eastbound →', x(103.70), y(1.189) + 11);
+
+  // tracks
+  const tr = q(Q.tracks, { ':t': T }); const byV = new Map();
+  for (const p of tr) { if (!byV.has(p.mmsi)) byV.set(p.mmsi, []); byV.get(p.mmsi).push(p); }
+  const pos = q(Q.positions, { ':t': T }); const score = new Map(pos.map(p => [p.mmsi, p.score]));
+  for (const [m, pts] of byV) {
+    const col = tier(score.get(m) ?? 0);
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i-1], b = pts[i], gap = b.t - a.t;
+      if (Math.abs(a.lon - b.lon) > .5) continue;          // wrap-around at edge
+      const jump = 60 * Math.hypot(b.lat - a.lat, (b.lon - a.lon) * KX) / (gap / 60) > 30;
+      g.strokeStyle = (gap >= 60 || jump) ? css('--accent') : col; g.lineWidth = (gap >= 60 || jump) ? 1.5 : 1.2;
+      g.globalAlpha = (gap >= 60 || jump) ? 1 : .55; g.setLineDash(gap >= 60 || jump ? [3, 3] : []);
+      g.beginPath(); g.moveTo(x(a.lon), y(a.lat)); g.lineTo(x(b.lon), y(b.lat)); g.stroke();
+    }
+  }
+  g.globalAlpha = 1; g.setLineDash([]);
+
+  // dark vessels: range rings from last known position
+  hits = [];
+  const dark = pos.filter(p => T - p.t >= 60 && p.lon > 103.64 && p.lon < 104.86);
+  for (const d of dark) {
+    const reach = (T - d.t) / 60 * Math.max(d.sog, 12), r = reach * nm, cx = x(d.lon), cy = y(d.lat);
+    g.fillStyle = css('--accent-soft'); g.strokeStyle = css('--accent'); g.setLineDash([5, 4]); g.lineWidth = 1.2;
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); g.stroke(); g.setLineDash([]);
+  }
+
+  // ground truth ghosts
+  if ($('#truth').checked && viewT === null) {
+    const truth = q("SELECT s.mmsi, s.lat, s.lon, v.name FROM sim s JOIN vessel v USING(mmsi), clock c WHERE s.dark_until > c.t OR s.spoof_dlat <> 0");
+    for (const t of truth) {
+      const cx = x(t.lon), cy = y(t.lat); g.strokeStyle = css('--accent'); g.lineWidth = 2;
+      g.beginPath(); g.moveTo(cx-5, cy-5); g.lineTo(cx+5, cy+5); g.moveTo(cx+5, cy-5); g.lineTo(cx-5, cy+5); g.stroke();
+      g.font = font(10, 600); g.fillStyle = css('--accent'); g.fillText(`TRUE: ${t.name}`, cx + 8, cy + 14);
+    }
+  }
+
+  // vessels
+  for (const p of pos) {
+    const cx = x(p.lon), cy = y(p.lat), col = tier(p.score), isDark = T - p.t >= 60 && p.lon > 103.64 && p.lon < 104.86;
+    if (cx < -10 || cx > w + 10) continue;
+    g.save(); g.translate(cx, cy);
+    if (p.sog < 1.5 && !isDark) { g.fillStyle = col; g.beginPath(); g.arc(0, 0, 4, 0, 7); g.fill(); }
+    else {
+      g.rotate(p.cog * Math.PI / 180);
+      g.beginPath(); g.moveTo(0, -8); g.lineTo(4.5, 5); g.lineTo(0, 2.5); g.lineTo(-4.5, 5); g.closePath();
+      if (isDark) { g.strokeStyle = css('--accent'); g.lineWidth = 1.5; g.stroke(); } else { g.fillStyle = col; g.fill(); }
+    }
+    g.restore();
+    if (p.mmsi === selected) { g.strokeStyle = css('--ink'); g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 11, 0, 7); g.stroke(); }
+    if (p.score >= 30 || p.mmsi === selected || isDark) {
+      const label = isDark ? `${p.name} · dark ${dur(T - p.t)}` : p.name;
+      g.font = font(10.5, 600); const tw = g.measureText(label).width;
+      const lx = Math.min(cx + 10, w - tw - 4), ly = cy - 9;
+      g.fillStyle = css('--water'); g.globalAlpha = .8; g.fillRect(lx - 2, ly - 10, tw + 4, 13); g.globalAlpha = 1;
+      g.fillStyle = isDark ? css('--accent') : css('--ink'); g.fillText(label, lx, ly);
+    }
+    hits.push({ mmsi: p.mmsi, x: cx, y: cy });
+  }
+
+  // scale bar
+  const sx = w - 20 - 10 * nm, sy = h - 18;
+  g.strokeStyle = css('--ink'); g.lineWidth = 1.5; g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + 10 * nm, sy); g.moveTo(sx, sy - 4); g.lineTo(sx, sy + 4); g.moveTo(sx + 10*nm, sy - 4); g.lineTo(sx + 10*nm, sy + 4); g.stroke();
+  g.fillStyle = css('--ink'); g.font = font(10, 600); g.fillText('10 NM', sx + 5 * nm - 14, sy - 6);
+  $('#boot').hidden = true;
+}
+
+$('#map').addEventListener('click', e => {
+  const r = e.currentTarget.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  let best = null, bd = 18;
+  for (const h of hits) { const d = Math.hypot(h.x - px, h.y - py); if (d < bd) { bd = d; best = h; } }
+  if (best) select(best.mmsi, true);
+});
+
+// ── rail ──
+function renderDark() {
+  const rows = q(Q.dark);
+  $('#darklist').innerHTML = rows.length ? rows.map(d => `
+    <div class="dark-item" data-m="${d.mmsi}" tabindex="0">
+      <b>${esc(d.name)}</b><span class="mono">${dur(d.silent_min)}</span>
+      <span class="mono muted">last ${stamp(d.last_t)} · ${d.sog.toFixed(1)} kn · ${Math.round(d.cog)}°</span>
+      <span class="mono muted">≤ ${d.reach_nm} nm</span>
+    </div>`).join('') : `<div class="empty">Every vessel in the area reported within the last hour.</div>`;
+}
+
+const KIND = { AIS_GAP: 'AIS gap', IMPOSSIBLE_SPEED: 'Impossible jump', STS_PROXIMITY: 'Ship-to-ship', LOITER_OPL: 'OPL loitering', FLAG_CHANGE: 'Re-flag' };
+function describe(a) {
+  const d = JSON.parse(a.detail);
+  switch (a.kind) {
+    case 'AIS_GAP': return `Silent ${dur(d.gap_min)}, reappeared ${d.moved_nm} nm from last report`;
+    case 'IMPOSSIBLE_SPEED': return `Moved ${d.moved_nm} nm in ${d.gap_min} min (${d.implied_kn} kn implied)`;
+    case 'STS_PROXIMITY': return `${d.distance_m} m apart, both stationary, outside any anchorage`;
+    case 'LOITER_OPL': return `${d.stationary_reports} stationary reports inside the OPL in 6 h`;
+    case 'FLAG_CHANGE': return `Flag changed ${d.from} → ${d.to}`;
+  }
+}
+function renderAlerts() {
+  const rows = q(Q.alerts), open = rows.filter(r => r.status === 'open').length;
+  $('#alertmeta').textContent = `${open} open`;
+  $('#alerts').innerHTML = rows.length ? rows.map(a => `
+    <div class="al ${a.severity} ${a.status}">
+      <div class="sev"></div>
+      <div class="body">
+        <div class="top"><span class="kind">${KIND[a.kind]} · ${a.severity}</span><span class="mono muted" style="font-size:11px">${stamp(a.t)}</span></div>
+        <div><span class="who" data-m="${a.mmsi}">${esc(a.name)}</span>${a.other_name ? ` ↔ <span class="who" data-m="${a.other_mmsi}">${esc(a.other_name)}</span>` : ''}</div>
+        <div class="det">${esc(describe(a))}</div>
+        <div class="acts">${a.status === 'open'
+          ? `<button data-id="${a.id}" data-s="escalated">Escalate</button><button data-id="${a.id}" data-s="dismissed">Dismiss</button>`
+          : `<span class="pill ${a.status}">${a.status}</span><button data-id="${a.id}" data-s="open">Reopen</button>`}</div>
+      </div>
+    </div>`).join('') : `<div class="empty">No alerts yet.</div>`;
+}
+$('#alerts').addEventListener('click', e => {
+  const b = e.target.closest('button[data-id]');
+  if (b) { db.run('UPDATE alert SET status = ? WHERE id = ?', [b.dataset.s, +b.dataset.id]); refresh(); return; }
+  const w = e.target.closest('[data-m]'); if (w) select(+w.dataset.m, true);
+});
+$('#darklist').addEventListener('click', e => { const w = e.target.closest('[data-m]'); if (w) select(+w.dataset.m, true); });
+$('#darklist').addEventListener('keydown', e => { if (e.key === 'Enter') { const w = e.target.closest('[data-m]'); if (w) select(+w.dataset.m, true); } });
+
+// ── risk board ──
+function renderRisk() {
+  const rows = q(Q.risk);
+  $('#risktable').innerHTML = `<thead><tr><th>Vessel</th><th>Type</th><th>Flag</th><th class="num">Age</th><th>Composition</th><th class="num">Score</th><th>Sanctioned party in chain</th></tr></thead><tbody>` +
+    rows.map(r => `<tr class="click" data-m="${r.mmsi}" tabindex="0">
+      <td><b>${esc(r.name)}</b><div class="mono muted" style="font-size:11px">${r.mmsi}</div></td>
+      <td>${esc(r.type)}</td><td class="mono">${r.flag}</td><td class="num">${r.age}</td>
+      <td><div class="bar" title="ownership ${r.ownership} · behaviour ${r.behaviour} · profile ${r.profile}">
+        <span style="width:${Math.min(r.ownership,100)}%;background:var(--hi)"></span>
+        <span style="width:${Math.min(r.behaviour,100)}%;background:var(--accent)"></span>
+        <span style="width:${Math.min(r.profile,100)}%;background:var(--muted)"></span></div>
+        <div class="mono muted" style="font-size:10.5px;margin-top:2px">${r.ownership} + ${r.behaviour} + ${r.profile}</div></td>
+      <td class="num"><span class="score ${r.score >= 60 ? 'tier-hi' : r.score >= 30 ? 'tier-med' : ''}">${r.score}</span></td>
+      <td>${r.sanctioned_parties ? `<span class="sanc">SANCTIONED</span> ${esc(r.sanctioned_parties)}` : '<span class="muted">—</span>'}</td>
+    </tr>`).join('') + '</tbody>';
+}
+$('#risktable').addEventListener('click', e => { const r = e.target.closest('tr[data-m]'); if (r) select(+r.dataset.m, true); });
+$('#risktable').addEventListener('keydown', e => { if (e.key === 'Enter') { const r = e.target.closest('tr[data-m]'); if (r) select(+r.dataset.m, true); } });
+
+// ── dossier ──
+function select(m, open) { selected = m; if (open) setTab('dossier'); refresh(); }
+function renderDossier() {
+  const v = one(`SELECT v.*, f.name AS flag_name, f.open_registry, c.name AS owner, r.score, r.ownership, r.behaviour, r.profile
+                 FROM vessel v JOIN flag_state f ON f.code = v.flag JOIN company c ON c.id = v.owner_id JOIN v_risk r USING (mmsi)
+                 WHERE v.mmsi = :m`, { ':m': selected });
+  if (!v) { $('#dossier').innerHTML = '<div class="empty">Select a vessel on the chart or the risk board.</div>'; return; }
+  const paths = q(`SELECT * FROM v_ownership_paths WHERE mmsi = :m ORDER BY path`, { ':m': selected });
+  const flags = q(`SELECT h.flag, f.name, h.since FROM flag_history h JOIN flag_state f ON f.code = h.flag WHERE mmsi = :m ORDER BY since`, { ':m': selected });
+  const alerts = q(`SELECT a.*, v.name, o.name AS other_name FROM alert a JOIN vessel v ON v.mmsi = a.mmsi LEFT JOIN vessel o ON o.mmsi = a.other_mmsi
+                    WHERE a.mmsi = :m OR a.other_mmsi = :m ORDER BY t DESC LIMIT 12`, { ':m': selected });
+  const notes = q(`SELECT author, body FROM note WHERE mmsi = :m`, { ':m': String(selected) });
+  const sp = q(`SELECT t, sog FROM ping WHERE mmsi = :m ORDER BY t`, { ':m': selected });
+  const exp = one(`SELECT sanctioned_share FROM v_exposure WHERE mmsi = :m`, { ':m': selected });
+  const flagAge = s => s < -525600 ? `${Math.round(-s / 525600)} yr ago` : s < 0 ? `${Math.round(-s / 1440)} days ago` : stamp(s);
+
+  // speed sparkline with gaps
+  const W = 600, H = 80, maxT = Math.max(now, 60), maxS = Math.max(18, ...sp.map(p => p.sog));
+  let path = '', gaps = '';
+  sp.forEach((p, i) => {
+    const X = p.t / maxT * W, Y = H - 6 - p.sog / maxS * (H - 14);
+    const prev = sp[i-1];
+    if (!prev || p.t - prev.t >= 60) { if (prev) gaps += `<rect x="${prev.t/maxT*W}" y="0" width="${(p.t-prev.t)/maxT*W}" height="${H}" fill="var(--accent-soft)"/>`; path += `M${X.toFixed(1)},${Y.toFixed(1)}`; }
+    else path += `L${X.toFixed(1)},${Y.toFixed(1)}`;
+  });
+  const lastP = sp[sp.length - 1];
+  if (lastP && now - lastP.t >= 60) gaps += `<rect x="${lastP.t/maxT*W}" y="0" width="${(now-lastP.t)/maxT*W}" height="${H}" fill="var(--accent-soft)"/>`;
+
+  $('#dossier').innerHTML = `
+  <div class="dossier">
+    <div class="col">
+      <div>
+        <div class="vname">${esc(v.name)}</div>
+        <div class="muted">${esc(v.type)} · ${esc(v.flag_name)} flag${v.open_registry ? ' (open registry)' : ''} · registered owner ${esc(v.owner)}</div>
+        <div class="particulars">
+          <div><small>MMSI</small><span>${v.mmsi}</span></div><div><small>IMO</small><span>${v.imo}</span></div>
+          <div><small>Built · age</small><span>${v.built} · ${v.age} yr</span></div><div><small>Deadweight</small><span>${v.dwt.toLocaleString()} t</span></div>
+          <div><small>Risk score</small><span class="${v.score>=60?'tier-hi':v.score>=30?'tier-med':''}" style="font-weight:600">${v.score} / 100</span></div>
+          <div><small>Components</small><span>${v.ownership} · ${v.behaviour} · ${v.profile}</span></div>
+        </div>
+      </div>
+      <div class="section"><h3>Speed over ground, whole record · shaded = transponder silent</h3>
+        <svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Speed history">
+          ${gaps}<line x1="0" x2="${W}" y1="${H-6}" y2="${H-6}" stroke="var(--rule)"/>
+          <path d="${path}" fill="none" stroke="var(--ink)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <div class="mono muted" style="font-size:11px;display:flex;justify-content:space-between"><span>${stamp(0)}</span><span>${stamp(maxT)}</span></div>
+      </div>
+      <div class="section"><h3>Alerts involving this vessel</h3>
+        ${alerts.length ? alerts.map(a => `<div class="kv"><span><span class="kind" style="color:var(--${a.severity==='high'?'hi':a.severity==='medium'?'med':'lo'})">${KIND[a.kind]}</span> <span class="mono muted" style="font-size:11px">${stamp(a.t)}${a.status!=='open'?' · '+a.status:''}</span></span><span class="muted" style="font-size:12.5px">${esc(describe(a))}${a.other_name ? ` (with ${esc(a.mmsi===selected?a.other_name:a.name)})` : ''}</span></div>`).join('') : '<span class="muted">None.</span>'}
+      </div>
+    </div>
+    <div class="col">
+      <div class="section"><h3 style="display:flex;justify-content:space-between;align-items:center;gap:8px">Ownership, every path upward <button class="sqlchip" data-own="1">SQL</button></h3>
+        <div class="tree">${paths.map(p => `<div class="node" style="padding-left:${p.depth * 18}px">
+            <span>${p.depth ? '└ ' : ''}${esc(p.name)}</span> <span class="j">${esc(p.jurisdiction)} · ${esc(p.kind)}</span>
+            ${p.sanctioned ? '<span class="sanc">SANCTIONED</span>' : ''}<span class="share">${(p.share*100).toFixed(1)}%</span></div>`).join('')}</div>
+        <div class="muted" style="font-size:12.5px">Effective sanctioned share across all paths: <b class="mono" style="color:var(--ink)">${(exp.sanctioned_share*100).toFixed(1)}%</b></div>
+      </div>
+      <div class="section"><h3>Flag history</h3>
+        ${flags.map(f => `<div class="node"><span class="mono">${f.flag}</span> ${esc(f.name)}<span class="share">${flagAge(f.since)}</span></div>`).join('')}
+      </div>
+      <div class="section"><h3>Analyst notes</h3>
+        ${notes.length ? notes.map(n => `<div class="notecard"><header><span>${esc(n.author)}</span></header><p>${esc(n.body)}</p></div>`).join('') : '<span class="muted">No notes yet. Add one under Analyst notes.</span>'}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── notes (FTS) ──
+function renderNotes() {
+  const term = $('#nq').value.trim(); const box = $('#notes');
+  if (!term) { box.innerHTML = '<div class="empty">Type a word to search all notes.</div>'; return; }
+  try {
+    const rows = q(Q.notes, { ':q': term });
+    box.innerHTML = rows.length ? rows.map(r => `<div class="notecard"><header><b class="who" data-m="${r.mmsi}" style="cursor:pointer;color:var(--ink)">${esc(r.name)}</b><span>${esc(r.author)}</span></header>
+      <p>${esc(r.excerpt).replace(/\[\[/g, '<mark>').replace(/\]\]/g, '</mark>')}</p></div>`).join('') : `<div class="empty">No notes match “${esc(term)}”.</div>`;
+  } catch (e) { box.innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+$('#notesearch').addEventListener('submit', e => { e.preventDefault(); renderNotes(); });
+$('#notes').addEventListener('click', e => { const w = e.target.closest('[data-m]'); if (w) select(+w.dataset.m, true); });
+$('#noteadd').addEventListener('submit', e => {
+  e.preventDefault(); const body = $('#nbody').value.trim(); if (!body) return;
+  db.run('INSERT INTO note(mmsi, author, body) VALUES (?, ?, ?)', [$('#nvessel').value, 'You', body]);
+  $('#nbody').value = ''; renderNotes();
+});
+
+// ── console ──
+function renderPresets() {
+  $('#presets').innerHTML = PRESETS.map(([h, items]) => `<h4>${h}</h4>` + items.map(([n]) => `<button data-preset="${esc(n)}">${esc(n)}</button>`).join('')).join('');
+}
+function findPreset(name) { for (const [, items] of PRESETS) for (const [n, s] of items) if (n === name) return s; }
+function openConsole(sql, run) { setTab('console'); $('#sql').value = sql; if (run) runConsole(); $('#sql').focus(); }
+function runConsole() {
+  let sql = $('#sql').value;
+  const T = viewT ?? now;
+  sql = sql.replace(/:t\b/g, String(T)).replace(/:q\b/g, `'${($('#nq').value || 'flag*').replace(/'/g, "''")}'`);
+  const out = $('#out'); const t0 = performance.now();
+  try {
+    const res = db.exec(sql); const ms = performance.now() - t0;
+    const r = res[res.length - 1];
+    const changed = db.getRowsModified();
+    $('#runmeta').textContent = `${ms.toFixed(1)} ms` + (r ? ` · ${r.values.length} rows` : '') + (changed ? ` · ${changed} rows changed` : '');
+    out.innerHTML = r ? `<div class="results"><table class="data"><thead><tr>${r.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${
+      r.values.map(row => `<tr>${row.map(v => `<td>${v === null ? '<span class="muted">NULL</span>' : esc(typeof v === 'number' && !Number.isInteger(v) ? +v.toFixed(5) : v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      .replace(/<td>(CREATE TRIGGER[\s\S]*?)<\/td>/, (m, s) => `<td style="white-space:pre;font-size:12px">${s}</td>`)
+      : `<div class="empty">Statement ran. No rows returned.</div>`;
+    refresh();
+  } catch (e) {
+    $('#runmeta').textContent = 'rejected';
+    out.innerHTML = `<div class="err">SQLite refused: ${esc(e.message)}</div>`;
+  }
+}
+$('#run').addEventListener('click', runConsole);
+$('#sql').addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runConsole(); } });
+document.addEventListener('click', e => {
+  const chip = e.target.closest('.sqlchip[data-q]'); if (chip) { openConsole(Q[chip.dataset.q], true); return; }
+  const p = e.target.closest('[data-preset]'); if (p) { openConsole(findPreset(p.dataset.preset), true); return; }
+  if (e.target.closest('[data-own]')) openConsole(findPreset('Ownership paths of AURORA SPIRIT').replace(/AURORA SPIRIT/, one('SELECT name FROM vessel WHERE mmsi=:m',{':m':selected}).name).replace('626000350', selected), true);
+});
+
+// ── source ──
+let sourceDone = false;
+const DESC = {
+  vessel: 'Ships, with IMO checksum and MMSI format enforced by CHECK', ping: 'Append-only AIS position reports', alert: 'Findings, de-duplicated per 6-hour window by a unique index',
+  ownership: 'Directed graph of company stakes', company: 'Owners, holding companies and shells', sim: 'Ground truth the detectors never read', scenario: 'Scripted events, applied by the tick',
+  detect_gap_and_jump: 'Silences ≥ 60 min and jumps faster than 30 kn', detect_sts: 'Two stationary ships within 0.4 nm outside an anchorage', detect_loiter: '30+ stationary reports in the OPL within 6 h',
+  detect_reflag: 'Logs flag history and raises an alert', ping_is_append_only: 'Rejects any edit to evidence', audit_alert_status: 'Writes every triage decision to audit_log',
+  v_risk: 'Explainable score: ownership + decayed behaviour + profile', v_ownership_paths: 'Recursive walk up the ownership graph', v_exposure: 'Sanctioned share summed over all paths',
+  v_dark: 'Silent vessels and how far they could have gone', v_latest: 'Latest report per vessel', clock: 'One row, enforced: the current time', zone: 'Areas that change how rules behave',
+  flag_state: 'Registries; open registries add to the profile score', flag_history: 'Every flag a vessel has flown', audit_log: 'Who changed what, when', note: 'Full-text index (FTS4)',
+};
+function renderSource() {
+  if (sourceDone) return; sourceDone = true;
+  const objs = q(`SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'note_%' AND name NOT LIKE 'sqlite_%'
+                  ORDER BY CASE type WHEN 'trigger' THEN 0 WHEN 'view' THEN 1 WHEN 'table' THEN 2 ELSE 3 END, name`);
+  $('#source').innerHTML = objs.map(o => `<details><summary><span class="kindtag">${o.type}</span><b>${esc(o.name)}</b><span>${esc(DESC[o.name] || '')}</span></summary><pre class="code">${hl(o.sql)}</pre></details>`).join('')
+   + `<details><summary><span class="kindtag">script</span><b>tick.sql</b><span>One ten-minute step of the world. Run on every clock advance.</span></summary><pre class="code">${hl(TICK.trim())}</pre></details>`;
+}
+
+// ── tabs & controls ──
+function setTab(name) {
+  tab = name;
+  $$('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === name));
+  $$('.tabpanel').forEach(p => p.hidden = p.dataset.panel !== name);
+  if (name === 'dossier') renderDossier();
+  if (name === 'notes') renderNotes();
+  if (name === 'source') renderSource();
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+$('#b10').addEventListener('click', () => tick(1));
+$('#b60').addEventListener('click', () => tick(6));
+$('#bplay').addEventListener('click', () => {
+  if (playing) { clearInterval(playing); playing = null; $('#bplay').textContent = 'Run clock'; return; }
+  $('#bplay').textContent = 'Pause';
+  playing = setInterval(() => { if (now >= END) { clearInterval(playing); playing = null; $('#bplay').textContent = 'Run clock'; return; } tick(1); }, 220);
+});
+$('#breset').addEventListener('click', () => {
+  if (playing) $('#bplay').click();
+  setControls(false); sourceDone = false; viewT = null; lastTickMs = 0; $('#out').innerHTML = '';
+  build(() => { setControls(true); refresh(); });
+});
+$('#scrub').addEventListener('input', e => { const v = +e.target.value; viewT = v >= now ? null : v; refresh(); });
+$('#truth').addEventListener('change', () => drawMap(viewT ?? now));
+function setControls(on) { ['#b10','#b60','#bplay','#breset'].forEach(s => $(s).disabled = !on); }
+new ResizeObserver(() => { geo = null; if (db) drawMap(viewT ?? now); }).observe($('.chartbox'));
+
+// ── start ──
+initSqlJs().then(S => {
+  SQL = S;
+  build(() => {
+    $('#sqlitever').textContent = one('SELECT sqlite_version() AS v').v;
+    $('#nvessel').innerHTML = q('SELECT mmsi, name FROM vessel ORDER BY name').map(v => `<option value="${v.mmsi}">${esc(v.name)}</option>`).join('');
+    renderPresets();
+    $('#sql').value = Q.risk;
+    setControls(true); refresh();
+  });
+}).catch(e => { $('#boot').textContent = 'SQLite failed to load: ' + e.message; });
+})();
+</script>
+
+</body>
+</html>

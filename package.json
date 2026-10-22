@@ -1,0 +1,13 @@
+{
+  "name": "darkwater",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shadow-fleet maritime surveillance demo where SQLite is the entire application.",
+  "type": "module",
+  "scripts": {
+    "build": "python3 build.py",
+    "simulate": "node scripts/simulate.mjs"
+  },
+  "devDependencies": { "sql.js": "1.10.3" },
+  "license": "MIT"
+}
