@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Learned anomaly detectors on real, anonymized Chesapeake Bay AIS, with every number a SQLite query running in the browser.">
+<title>Latent Wake Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+{{STYLE}}</style>
+<style>
+/* Latent Wake additions */
+.seg{display:inline-flex;border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:5px 10px;cursor:pointer;font-size:12.5px;font-weight:500;white-space:nowrap}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg)}
+.ph .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.queue{overflow:auto;max-height:560px}
+.qi{display:grid;grid-template-columns:4px 1fr auto;border-bottom:1px solid var(--rule);cursor:pointer}
+.qi .sev{background:var(--hi)}
+.qi .body{padding:8px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.qi b{font-family:var(--display);font-stretch:85%;font-weight:700;font-size:15px;letter-spacing:.02em}
+.qi .sc{padding:8px 12px;text-align:right;font-family:var(--mono);font-size:12px;display:flex;flex-direction:column;justify-content:center}
+.qi.sel{background:var(--accent-soft)}
+.qi:hover .body b{color:var(--accent)}
+.pill.inj{color:var(--med)} .pill.fa{color:var(--hi)} .pill.hidden{color:var(--muted);border-style:dashed}
+.tally{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--rule);border-top:1px solid var(--rule)}
+.tally div{background:var(--panel);padding:8px 12px;display:flex;flex-direction:column}
+.tally small{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tally span{font-family:var(--mono);font-size:15px;font-weight:600}
+.minimap{width:100%;max-width:440px;max-height:340px;height:auto;display:block;background:var(--water);border:1px solid var(--rule);border-radius:3px}
+.steps{width:100%;height:auto;display:block}
+.yes{color:var(--hi);font-weight:600} .no{color:var(--muted)}
+.best{font-weight:700;color:var(--ink)}
+table.data th.num{text-align:right}
+.note-box{border-left:3px solid var(--accent);padding:6px 12px;max-width:85ch;font-size:13px;margin:0 0 12px}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="brand">
+      <h1>Latent<span>Wake</span></h1>
+      <p>Learned surprise · Chesapeake Bay &amp; Hampton Roads · real AIS, anonymized</p>
+    </div>
+    <div class="ops">
+      <div class="clock"><b id="headline">—</b><small id="headmeta">loading SQLite…</small></div>
+      <a class="btn" href="index.html">← Darkwater</a>
+    </div>
+  </header>
+
+  <p class="lede">Three detectors read the same <strong>real AIS tracks</strong> from the frozen test set of
+  <a href="https://github.com/PCSchmidt/latent-wake">Latent Wake</a>: June 2025, vessels the models never saw.
+  Some windows carry a <strong>synthetic anomaly</strong> injected into the real track: a ship circling, leaving its route,
+  reporting a false position, jumping, or going quiet. Pick a detector to see what it would alert on at a
+  <strong>1% false-alarm budget</strong> set on validation vessels, then tick <em>Show injected truth</em> to see what it caught
+  and what it cried wolf on. As in Darkwater, SQLite runs in this page and every panel has an <span class="mono">SQL</span> button.</p>
+
+  <div class="grid">
+    <section class="panel" aria-label="Chart">
+      <div class="ph"><h2>Chart · sampled test windows</h2>
+        <div class="tools">
+          <div class="seg" role="group" aria-label="Detector" id="detseg"></div>
+          <button class="sqlchip" data-q="tracks">SQL</button>
+        </div>
+      </div>
+      <div class="chartbox"><canvas id="map" role="img" aria-label="Chart of sampled vessel tracks over traffic density"></canvas><div class="boot" id="boot">Loading SQLite and the test-set sample…</div></div>
+      <div class="scrub">
+        <label class="toggle" for="truth"><input type="checkbox" id="truth"> Show injected truth</label>
+        <span class="muted" style="font-size:12.5px" id="detblurb"></span>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--hi)"></i>Alert at the 1% budget</span>
+        <span><i style="background:var(--track);opacity:.55"></i>No alert</span>
+        <span><i style="background:var(--accent)"></i>Selected</span>
+        <span id="leg-truth" hidden><i style="background:var(--med)"></i>Injected steps</span>
+        <span>Background: where Class A traffic actually went, April–June 2025</span>
+      </div>
+    </section>
+
+    <div class="rail">
+      <section class="panel" aria-label="Alert queue">
+        <div class="ph"><h2 id="queuetitle">Alert queue</h2><span class="meta" id="queuemeta"></span><button class="sqlchip" data-q="queue">SQL</button></div>
+        <div class="queue" id="queue"></div>
+        <div class="tally" id="tally"></div>
+      </section>
+    </div>
+  </div>
+
+  <section class="panel" aria-label="Analysis">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="window" aria-selected="true">Window</button>
+      <button class="tab" role="tab" data-tab="board" aria-selected="false">Scoreboard</button>
+      <button class="tab" role="tab" data-tab="fa" aria-selected="false">Who cries wolf</button>
+      <button class="tab" role="tab" data-tab="console" aria-selected="false">SQL console</button>
+      <button class="tab" role="tab" data-tab="about" aria-selected="false">About</button>
+    </div>
+
+    <div class="tabpanel" data-panel="window"><div id="window"></div></div>
+
+    <div class="tabpanel" data-panel="board" hidden>
+      <div class="ph" style="padding:0 0 10px;border:0"><span class="muted" style="font-size:13px" id="boardnote"></span><button class="sqlchip" data-q="board">SQL</button></div>
+      <div class="scroll-x"><table class="data" id="board"></table></div>
+    </div>
+
+    <div class="tabpanel" data-panel="fa" hidden>
+      <p class="note-box">On new vessels, no detector held its 1% budget. Most of the JEPA's false alarms come from a
+      handful of vessels whose ordinary work looks like nothing in training: a cargo ship moored at a terminal,
+      a fishing boat working the mid-bay, a harbor pilot boat matching speed alongside ships, and a dredge creeping
+      along a channel. The sample includes each one's loudest false alarms. Click a vessel to inspect it.</p>
+      <div class="ph" style="padding:0 0 10px;border:0"><span class="muted" style="font-size:13px">Featured vessels, ranked by JEPA alerts in the sample.</span><button class="sqlchip" data-q="featured">SQL</button></div>
+      <div class="scroll-x"><table class="data" id="featured"></table></div>
+    </div>
+
+    <div class="tabpanel" data-panel="console" hidden>
+      <div class="console">
+        <div class="presets" id="presets"></div>
+        <div style="min-width:0">
+          <textarea id="sql" spellcheck="false" aria-label="SQL"></textarea>
+          <div class="runbar">
+            <button class="btn primary" id="run">Run</button>
+            <span class="muted" style="font-size:12px">Ctrl/⌘ + Enter. The database lives in this tab; reload to reset.</span>
+            <span class="mono muted" id="runmeta" style="margin-left:auto;font-size:12px"></span>
+          </div>
+          <div id="out"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabpanel" data-panel="about" hidden>
+      <div class="ideas">
+        <div class="idea"><b>Real tracks, injected anomalies</b><p>Positions are real NOAA AIS. Anomalies are injected into held-out tracks at graded severities, so ground truth is known exactly.</p></div>
+        <div class="idea"><b>Scores, not stories</b><p>Each score is how rare the window would be among validation windows of the same vessel class and motion state, as −log₁₀ of a tail probability.</p></div>
+        <div class="idea"><b>One look at the test set</b><p>The test set was frozen before training and scored once; the scoreboard is that recorded run, three seeds per learned model.</p></div>
+        <div class="idea"><b>Anonymous by design</b><p>No MMSIs, names or times leave the analysis. A flag means a track was unusual to a model, not that anyone did anything wrong.</p></div>
+      </div>
+      <div class="kv" id="about"></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>SQLite <span id="sqlitever">—</span> compiled to JavaScript, running locally in this page.</span>
+    <span>Real NOAA MarineCadastre AIS, anonymized. Anomalies are synthetic. Not for navigation or enforcement.</span>
+    <span id="dbstats"></span>
+  </footer>
+</div>
+
+<script type="text/plain" id="lw-schema">{{LW_SCHEMA}}</script>
+<script type="text/plain" id="lw-data">{{LW_DATA}}</script>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-asm.js"></script>
+<script>
+(() => {
+"use strict";
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let SQL, db, det = 'jepa', sel = null, truth = false, tab = 'window';
+
+function q(sql, params) {
+  const st = db.prepare(sql); if (params) st.bind(params);
+  const rows = []; while (st.step()) rows.push(st.getAsObject()); st.free(); return rows;
+}
+const one = (sql, p) => q(sql, p)[0];
+
+const KIND = { normal: 'Normal', loitering: 'Loitering', route_deviation: 'Route deviation',
+               position_spoof: 'Position spoof', teleport: 'Teleport', ais_gap: 'AIS gap' };
+const rarity = s => { const n = Math.pow(10, s); return n >= 1e6 ? 'rarer than 1 in a million' : `1 in ${Math.round(n).toLocaleString()}`; };
+const pct = x => x == null ? '—' : (100 * x).toFixed(1) + '%';
+const f3 = x => x == null ? '—' : x.toFixed(3);
+
+// ── the queries behind each panel (shown verbatim by the SQL chips) ──
+const Q = {
+tracks: `-- Every sampled window's track, with whether the chosen detector alerts on it.
+SELECT p.window_id, p.step, p.lat, p.lon, p.injected, a.alerted
+FROM lw_point p
+JOIN v_lw_alert a ON a.window_id = p.window_id AND a.detector = :det
+ORDER BY p.window_id, p.step;`,
+queue: `-- What this detector alerts on, loudest first.
+SELECT window_id, vessel, ship_type, score, threshold, kind, severity
+FROM v_lw_alert
+WHERE detector = :det AND alerted
+ORDER BY score DESC;`,
+tally: `SELECT * FROM v_lw_outcome WHERE detector = :det;`,
+board: `-- The recorded benchmark: three-seed mean AUROC on the whole frozen test set,
+-- and the false-alarm rate on its normal windows at the 1% validation budget.
+SELECT * FROM v_lw_board;`,
+featured: `SELECT * FROM v_lw_featured;`,
+window: `SELECT w.*, s.detector, s.score, s.threshold, s.score > s.threshold AS alerted
+FROM lw_window w JOIN lw_score s ON s.window_id = w.id
+WHERE w.id = :id;`,
+};
+
+const PRESETS = [
+ ['Look inside', [
+  ['Alerts per detector, by outcome', `SELECT detector, outcome_if_alerted AS outcome, count(*) AS alerts\nFROM v_lw_alert WHERE alerted\nGROUP BY detector, outcome ORDER BY detector, outcome;`],
+  ['What the JEPA misses', `-- Injected anomalies the JEPA scores below its threshold, by kind.\nSELECT kind, count(*) AS missed, group_concat(DISTINCT severity) AS severities\nFROM v_lw_alert\nWHERE detector = 'jepa' AND kind <> 'normal' AND NOT alerted\nGROUP BY kind ORDER BY missed DESC;`],
+  ['Where JEPA and TrAISformer disagree', `SELECT w.vessel, w.kind, w.severity,\n       round(j.score, 2) AS jepa, round(t.score, 2) AS trais\nFROM lw_window w\nJOIN lw_score j ON j.window_id = w.id AND j.detector = 'jepa'\nJOIN lw_score t ON t.window_id = w.id AND t.detector = 'trais'\nWHERE (j.score > j.threshold) <> (t.score > t.threshold)\nORDER BY abs(j.score - t.score) DESC;`],
+  ['Loudest step in each window', `-- Which step each detector found most surprising (window function).\nSELECT window_id, detector, step, round(value, 2) AS surprise\nFROM (\n  SELECT *, row_number() OVER (PARTITION BY window_id, detector ORDER BY value DESC) AS rn\n  FROM lw_step\n) WHERE rn = 1 ORDER BY window_id, detector LIMIT 60;`],
+  ['How the sample was drawn', `SELECT * FROM lw_meta;`],
+ ]],
+ ['Try to break it', [
+  ['Invent an anomaly kind', `INSERT INTO lw_window(id, vessel, ship_type, vessel_class, kind, level, severity, featured, under_way, mean_sog)\nVALUES (-1, 'x', 'x', 'x', 'smuggling', 0, '', 0, 1, 10);`],
+  ['Score with an unknown detector', `INSERT INTO lw_score VALUES ((SELECT min(id) FROM lw_window), 'gut_feeling', 9.9, 2.0);`],
+ ]],
+ ['What if', [
+  ['Double every threshold', `-- Fewer alerts: watch the chart and queue change.\nUPDATE lw_score SET threshold = threshold * 2;\nSELECT * FROM v_lw_outcome;`],
+ ]],
+];
+
+// ── SQL highlighter for display ──
+const KW = /\b(SELECT|FROM|WHERE|JOIN|LEFT|ON|USING|AND|OR|NOT|IN|IS|NULL|AS|ORDER|BY|GROUP|LIMIT|DESC|ASC|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|VIEW|INDEX|UNIQUE|CASE|WHEN|THEN|ELSE|END|DISTINCT|OVER|PARTITION|WITH|BETWEEN|PRIMARY|KEY|CHECK|REFERENCES|INTEGER|REAL|TEXT|sum|count|max|min|avg|round|abs|row_number|group_concat)\b/;
+function hl(sql) {
+  const out = []; const re = /(--[^\n]*)|('(?:[^']|'')*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]+)|([\s\S])/g; let m;
+  while ((m = re.exec(sql))) {
+    if (m[1]) out.push(`<span class="tok-cm">${esc(m[1])}</span>`);
+    else if (m[2]) out.push(`<span class="tok-str">${esc(m[2])}</span>`);
+    else if (m[3]) out.push(`<span class="tok-num">${m[3]}</span>`);
+    else if (m[4]) out.push(new RegExp(`^${KW.source}$`, 'i').test(m[4]) ? `<span class="tok-kw">${m[4]}</span>` : m[4]);
+    else out.push(esc(m[5]));
+  }
+  return out.join('');
+}
+
+// ── chart ──
+let B, KX, geo = null, tracks = [];
+function bounds() {
+  const r = one(`SELECT min(lat) AS a, max(lat) AS b, min(lon) AS c, max(lon) AS d FROM lw_density`);
+  const p = 0.03; B = { lat0: r.a - p, lat1: r.b + p, lon0: r.c - p, lon1: r.d + p };
+  KX = Math.cos((B.lat0 + B.lat1) / 2 * Math.PI / 180);
+}
+function setupCanvas() {
+  const c = $('#map'), box = c.parentElement, W = box.clientWidth;
+  const aspect = (B.lat1 - B.lat0) / ((B.lon1 - B.lon0) * KX);
+  const h = Math.min(Math.round(W * aspect), Math.max(420, Math.round(window.innerHeight * 0.78)));
+  const w = Math.min(W, Math.round(h / aspect));
+  const dpr = window.devicePixelRatio || 1;
+  c.style.width = w + 'px'; c.style.height = h + 'px'; c.style.margin = '0 auto';
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  geo = { w, h, dpr, x: lon => (lon - B.lon0) / (B.lon1 - B.lon0) * w, y: lat => (B.lat1 - lat) / (B.lat1 - B.lat0) * h };
+}
+function loadTracks() {
+  const rows = q(Q.tracks, { ':det': det });
+  const by = new Map();
+  for (const r of rows) { if (!by.has(r.window_id)) by.set(r.window_id, { id: r.window_id, alerted: r.alerted, pts: [] }); by.get(r.window_id).pts.push(r); }
+  tracks = [...by.values()];
+}
+function drawMap() {
+  if (!geo) setupCanvas();
+  const c = $('#map'), g = c.getContext('2d');
+  g.setTransform(geo.dpr, 0, 0, geo.dpr, 0, 0);
+  g.fillStyle = css('--water'); g.fillRect(0, 0, geo.w, geo.h);
+  // density: where traffic actually went (log-scaled)
+  const cells = q(`SELECT lat, lon, n FROM lw_density`);
+  const maxn = Math.log1p(Math.max(...cells.map(d => d.n)));
+  const step = Math.abs(geo.x(B.lon0 + 0.02) - geo.x(B.lon0)) + 0.6, stepY = Math.abs(geo.y(B.lat0 + 0.02) - geo.y(B.lat0)) + 0.6;
+  g.fillStyle = css('--track');
+  for (const d of cells) { g.globalAlpha = 0.06 + 0.34 * Math.log1p(d.n) / maxn; g.fillRect(geo.x(d.lon) - step / 2, geo.y(d.lat) - stepY / 2, step, stepY); }
+  g.globalAlpha = 1;
+  const line = (pts, color, width, dash) => {
+    g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(geo.x(p.lon), geo.y(p.lat)) : g.moveTo(geo.x(p.lon), geo.y(p.lat)));
+    g.strokeStyle = color; g.lineWidth = width; g.setLineDash(dash || []); g.stroke(); g.setLineDash([]);
+  };
+  const dot = (p, color, r) => { g.beginPath(); g.arc(geo.x(p.lon), geo.y(p.lat), r, 0, 2 * Math.PI); g.fillStyle = color; g.fill(); g.lineWidth = 1.5; g.strokeStyle = css('--panel'); g.stroke(); };
+  for (const t of tracks) if (!t.alerted && t.id !== sel) { g.globalAlpha = .55; line(t.pts, css('--track'), 1.2); g.globalAlpha = 1; }
+  for (const t of tracks) if (t.alerted && t.id !== sel) { line(t.pts, css('--hi'), 2); dot(t.pts[t.pts.length - 1], css('--hi'), 3); }
+  if (truth) for (const t of tracks) {
+    let seg = [];
+    for (const p of t.pts) { if (p.injected) seg.push(p); else { if (seg.length > 1) line(seg, css('--med'), 3); seg = []; } }
+    if (seg.length > 1) line(seg, css('--med'), 3);
+  }
+  const s = tracks.find(t => t.id === sel);
+  if (s) { line(s.pts, css('--accent'), 3.5); dot(s.pts[s.pts.length - 1], css('--accent'), 5); }
+}
+$('#map').addEventListener('click', e => {
+  const r = e.target.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  let best = null, bd = 12;
+  for (const t of tracks) for (const p of t.pts) { const d = Math.hypot(geo.x(p.lon) - x, geo.y(p.lat) - y); if (d < bd) { bd = d; best = t.id; } }
+  if (best !== null) select(best);
+});
+window.addEventListener('resize', () => { geo = null; drawMap(); });
+
+// ── rail ──
+function truthPill(r) {
+  if (!truth) return `<span class="pill hidden">truth hidden</span>`;
+  return r.kind === 'normal' ? `<span class="pill fa">normal · false alarm</span>` : `<span class="pill inj">${esc(KIND[r.kind])} · ${esc(r.severity)}</span>`;
+}
+function renderQueue() {
+  const d = one(`SELECT label FROM lw_detector WHERE detector = :d`, { ':d': det });
+  const rows = q(Q.queue, { ':det': det });
+  $('#queuetitle').textContent = `Alert queue · ${d.label}`;
+  $('#queuemeta').textContent = `${rows.length} alerts`;
+  $('#queue').innerHTML = rows.length ? rows.map(r => `<div class="qi${r.window_id === sel ? ' sel' : ''}" data-w="${r.window_id}">
+    <div class="sev"></div>
+    <div class="body"><b>${esc(r.vessel)}</b><span class="muted" style="font-size:12.5px">${esc(r.ship_type)}</span><span>${truthPill(r)}</span></div>
+    <div class="sc"><span>${r.score.toFixed(1)}</span><span class="muted">thr ${r.threshold.toFixed(1)}</span></div></div>`).join('')
+    : '<div class="empty">No alerts in this sample.</div>';
+  const t = one(Q.tally, { ':det': det });
+  $('#tally').innerHTML = truth
+    ? `<div><small>Injected anomalies caught</small><span>${t.caught} of ${t.injected}</span></div><div><small>False alarms</small><span>${t.false_alarms} of ${t.normals} normal</span></div>`
+    : `<div><small>Windows in sample</small><span>${t.injected + t.normals}</span></div><div><small>Alerts</small><span>${t.caught + t.false_alarms}</span></div>`;
+}
+$('#queue').addEventListener('click', e => { const w = e.target.closest('[data-w]'); if (w) select(+w.dataset.w); });
+
+// ── window detail ──
+function select(id) { sel = id; if (tab !== 'window') setTab('window'); refresh(); }
+function renderWindow() {
+  if (sel === null) { $('#window').innerHTML = '<div class="empty">Select a track on the chart or an alert in the queue.</div>'; return; }
+  const rows = q(Q.window, { ':id': sel }); if (!rows.length) return;
+  const w = rows[0];
+  const dets = q(`SELECT detector, label FROM lw_detector WHERE detector IN ('jepa','trais','kalman') ORDER BY ord`);
+  const pts = q(`SELECT step, lat, lon, injected FROM lw_point WHERE window_id = :id ORDER BY step`, { ':id': sel });
+  // mini track, framed on the window with a little margin
+  const la = pts.map(p => p.lat), lo = pts.map(p => p.lon);
+  const pad = 0.004, a0 = Math.min(...la) - pad, a1 = Math.max(...la) + pad, o0 = Math.min(...lo) - pad, o1 = Math.max(...lo) + pad;
+  const kx = Math.cos((a0 + a1) / 2 * Math.PI / 180), MW = 360;
+  const sc = Math.min(MW / ((o1 - o0) * kx), 300 / (a1 - a0)), MH = Math.max(120, (a1 - a0) * sc);
+  const X = o => ((o - o0) * kx * sc + (MW - (o1 - o0) * kx * sc) / 2), Y = a => ((a1 - a) * sc + (MH - (a1 - a0) * sc) / 2);
+  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.lon).toFixed(1)},${Y(p.lat).toFixed(1)}`).join('');
+  const inj = truth ? pts.filter(p => p.injected).map(p => `<circle cx="${X(p.lon).toFixed(1)}" cy="${Y(p.lat).toFixed(1)}" r="3" fill="var(--med)"/>`).join('') : '';
+  const metres = (() => { let m = 0; for (let i = 1; i < pts.length; i++) { const dy = (pts[i].lat - pts[i-1].lat) * 111320, dx = (pts[i].lon - pts[i-1].lon) * 111320 * kx; m += Math.hypot(dx, dy); } return m; })();
+  // per-step surprise, one row per detector
+  const SW = 600, RH = 56, steps = q(`SELECT detector, step, value FROM lw_step WHERE window_id = :id ORDER BY step`, { ':id': sel });
+  const injSteps = truth ? pts.filter(p => p.injected).map(p => p.step) : [];
+  const rowsSvg = dets.map((d, k) => {
+    const s = steps.filter(x => x.detector === d.detector); const top = Math.max(2, ...s.map(x => x.value));
+    const y = v => k * RH + RH - 6 - Math.min(v, top) / top * (RH - 16), x = st => st / 63 * SW;
+    const p = s.map((x0, i) => `${i ? 'L' : 'M'}${x(x0.step).toFixed(1)},${y(x0.value).toFixed(1)}`).join('');
+    const shade = injSteps.map(st => `<rect x="${(x(st) - SW / 126).toFixed(1)}" y="${k * RH + 4}" width="${(SW / 63).toFixed(1)}" height="${RH - 8}" fill="var(--med)" opacity=".18"/>`).join('');
+    const sc0 = rows.find(r => r.detector === d.detector);
+    return `${shade}<line x1="0" x2="${SW}" y1="${y(1)}" y2="${y(1)}" stroke="var(--rule)" stroke-dasharray="3 3"/>
+      <path d="${p}" fill="none" stroke="${sc0 && sc0.alerted ? 'var(--hi)' : 'var(--ink)'}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+      <text x="4" y="${k * RH + 14}" font-size="11" fill="var(--muted)" font-family="var(--mono)">${esc(d.label)}</text>`;
+  }).join('');
+  $('#window').innerHTML = `
+  <div class="dossier">
+    <div class="col">
+      <div>
+        <div class="vname">${esc(w.vessel)}</div>
+        <div class="muted">${esc(w.ship_type)} · ${esc(w.vessel_class.replace('_', ' '))} class · ${w.under_way ? 'under way' : 'stopped'} · mean ${w.mean_sog.toFixed(1)} kn · ${(metres / 1852).toFixed(1)} nmi in two hours</div>
+        <div class="particulars">
+          <div><small>What happened</small><span>${truth ? (w.kind === 'normal' ? 'Nothing injected' : esc(KIND[w.kind]) + ' · ' + esc(w.severity)) : 'Hidden · tick Show injected truth'}</span></div>
+          <div><small>Featured vessel</small><span>${w.featured ? 'Yes: a loud false-alarm source' : 'No · random sample'}</span></div>
+        </div>
+      </div>
+      <div class="section"><h3 style="display:flex;justify-content:space-between;align-items:center;gap:8px">Scores <button class="sqlchip" data-q="window">SQL</button></h3>
+        <table class="data"><thead><tr><th>Detector</th><th class="num">Score</th><th class="num">Threshold</th><th>Alert</th><th>As rare as</th></tr></thead><tbody>
+        ${dets.map(d => { const r = rows.find(x => x.detector === d.detector); return `<tr><td>${esc(d.label)}</td><td class="num">${r.score.toFixed(2)}</td><td class="num">${r.threshold.toFixed(2)}</td><td class="${r.alerted ? 'yes' : 'no'}">${r.alerted ? 'ALERT' : 'no'}</td><td class="muted">${rarity(r.score)}</td></tr>`; }).join('')}
+        </tbody></table>
+        <span class="muted" style="font-size:12px">"As rare as": among validation windows of the same vessel class and motion state.</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="section"><h3>Track · two hours on a 2-minute grid${truth ? ' · orange = injected steps' : ''}</h3>
+        <svg class="minimap" viewBox="0 0 ${MW} ${MH.toFixed(0)}" role="img" aria-label="Track of the selected window">
+          <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>${inj}
+          <circle cx="${X(pts[0].lon).toFixed(1)}" cy="${Y(pts[0].lat).toFixed(1)}" r="3.5" fill="var(--panel)" stroke="var(--accent)" stroke-width="1.5"/>
+          <circle cx="${X(pts[pts.length-1].lon).toFixed(1)}" cy="${Y(pts[pts.length-1].lat).toFixed(1)}" r="4" fill="var(--accent)"/>
+        </svg>
+        <span class="muted" style="font-size:12px">Hollow dot: start · filled dot: end</span>
+      </div>
+      <div class="section"><h3>Surprise along the window · dashed line = 99th percentile of normal steps</h3>
+        <svg class="steps" viewBox="0 0 ${SW} ${RH * dets.length}" role="img" aria-label="Per-step surprise for each detector">${rowsSvg}</svg>
+        <div class="mono muted" style="font-size:11px;display:flex;justify-content:space-between"><span>0 min</span><span>64 min</span><span>126 min</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── scoreboard ──
+function renderBoard() {
+  const rows = q(Q.board);
+  const cols = [['loitering', 'Loitering'], ['route_deviation', 'Route deviation'], ['position_spoof', 'Position spoof'], ['teleport', 'Teleport'], ['ais_gap', 'AIS gap']];
+  const best = Object.fromEntries(cols.map(([k]) => [k, Math.max(...rows.map(r => r[k] ?? -1))]));
+  const lowFa = Math.min(...rows.map(r => r.false_alarm_rate ?? 9));
+  const m = Object.fromEntries(q(`SELECT key, value FROM lw_meta`).map(r => [r.key, r.value]));
+  $('#boardnote').textContent = `Recorded benchmark on the whole frozen test set (sha256 ${m.testset_sha256}), three-seed mean AUROC; false alarms on its normal windows at the 1% validation budget. Bold = best per column.`;
+  $('#board').innerHTML = `<thead><tr><th>Detector</th>${cols.map(([, l]) => `<th class="num">${l}</th>`).join('')}<th class="num">False alarms</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td>${esc(r.detector)}</td>${cols.map(([k]) => `<td class="num${r[k] === best[k] ? ' best' : ' muted'}">${f3(r[k])}</td>`).join('')}<td class="num${r.false_alarm_rate === lowFa ? ' best' : ' muted'}">${pct(r.false_alarm_rate)}</td></tr>`).join('') + '</tbody>';
+}
+
+// ── who cries wolf ──
+function renderFeatured() {
+  const rows = q(Q.featured);
+  $('#featured').innerHTML = `<thead><tr><th>Vessel</th><th>Ship type</th><th class="num">Featured windows</th><th class="num">JEPA alarms</th><th class="num">Mean speed</th><th class="num">Lat</th><th class="num">Lon</th></tr></thead><tbody>` +
+    rows.map(r => `<tr class="click" data-v="${esc(r.vessel)}"><td><b>${esc(r.vessel)}</b></td><td>${esc(r.ship_type)}</td><td class="num">${r.windows}</td><td class="num">${r.jepa_alarms}</td><td class="num">${r.mean_sog_kn} kn</td><td class="num">${r.lat}</td><td class="num">${r.lon}</td></tr>`).join('') + '</tbody>';
+}
+$('#featured').addEventListener('click', e => {
+  const r = e.target.closest('[data-v]'); if (!r) return;
+  const w = one(`SELECT w.id FROM lw_window w JOIN lw_score s ON s.window_id = w.id AND s.detector = 'jepa' WHERE w.vessel = :v AND w.featured ORDER BY s.score DESC LIMIT 1`, { ':v': r.dataset.v });
+  if (w) select(w.id);
+});
+
+// ── console ──
+function renderPresets() {
+  $('#presets').innerHTML = PRESETS.map(([h, items]) => `<h4>${h}</h4>` + items.map(([n]) => `<button data-preset="${esc(n)}">${esc(n)}</button>`).join('')).join('');
+}
+function findPreset(name) { for (const [, items] of PRESETS) for (const [n, s] of items) if (n === name) return s; }
+function openConsole(sql, run) { setTab('console'); $('#sql').value = sql; if (run) runConsole(); $('#sql').focus(); }
+function runConsole() {
+  const sql = $('#sql').value, out = $('#out'), t0 = performance.now();
+  try {
+    const res = db.exec(sql.replace(/:det\b/g, `'${det}'`).replace(/:id\b/g, String(sel ?? -1))); const ms = performance.now() - t0;
+    $('#runmeta').textContent = `${ms.toFixed(1)} ms`;
+    if (!res.length) { out.innerHTML = '<div class="empty">Statement ran. No rows returned.</div>'; }
+    else {
+      const r = res[res.length - 1];
+      out.innerHTML = `<div class="results"><table class="data"><thead><tr>${r.columns.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>` +
+        r.values.slice(0, 500).map(v => `<tr>${v.map(x => `<td>${esc(typeof x === 'number' && !Number.isInteger(x) ? x.toFixed(4) : x)}</td>`).join('')}</tr>`).join('') +
+        `</tbody></table></div><div class="muted" style="font-size:12px;margin-top:6px">${r.values.length} row(s)${r.values.length > 500 ? ', first 500 shown' : ''}</div>`;
+    }
+    loadTracks(); refresh();
+  } catch (e) { out.innerHTML = `<div class="err">${esc(e.message)}</div>`; $('#runmeta').textContent = ''; }
+}
+$('#presets').addEventListener('click', e => { const b = e.target.closest('[data-preset]'); if (b) openConsole(findPreset(b.dataset.preset), true); });
+$('#run').addEventListener('click', runConsole);
+$('#sql').addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runConsole(); } });
+document.addEventListener('click', e => {
+  const c = e.target.closest('.sqlchip[data-q]'); if (!c) return;
+  const sql = Q[c.dataset.q].replace(/:det/g, `'${det}'`).replace(/:id/g, String(sel ?? -1));
+  openConsole(sql, true);
+});
+
+// ── about ──
+function renderAbout() {
+  const m = Object.fromEntries(q(`SELECT key, value FROM lw_meta`).map(r => [r.key, r.value]));
+  const dets = q(`SELECT label, blurb FROM lw_detector ORDER BY ord`);
+  $('#about').innerHTML = `<p><b>Sample.</b> ${esc(m.sample)}. The test set (sha256 ${esc(m.testset_sha256)}) was scored once at ${esc(m.scored_at)}.</p>
+    <p><b>Per-step curves.</b> ${esc(m.step_scale)}; recomputed from the same seed-0 checkpoints for display. The JEPA scores whole 16-minute chunks, so its curve has one point per chunk.</p>
+    <p><b>Detectors.</b></p><ul>${dets.map(d => `<li><b>${esc(d.label)}</b>: ${esc(d.blurb)}</li>`).join('')}</ul>
+    <p><b>Read more.</b> <a href="https://github.com/PCSchmidt/latent-wake/blob/main/docs/WRITEUP.md">Write-up</a> ·
+    <a href="https://github.com/PCSchmidt/latent-wake/blob/main/EVAL_RESULTS.md">Full results</a> ·
+    <a href="https://github.com/PCSchmidt/latent-wake/blob/main/MODEL_CARD.md">Model card</a> ·
+    <a href="https://github.com/PCSchmidt/latent-wake">Code</a></p>`;
+}
+
+// ── shell ──
+function renderSeg() {
+  const dets = q(`SELECT detector, label FROM lw_detector WHERE detector IN (SELECT DISTINCT detector FROM lw_score) ORDER BY ord`);
+  $('#detseg').innerHTML = dets.map(d => `<button data-det="${d.detector}" aria-pressed="${d.detector === det}">${esc(d.label)}</button>`).join('');
+  $('#detblurb').textContent = one(`SELECT blurb FROM lw_detector WHERE detector = :d`, { ':d': det }).blurb;
+}
+$('#detseg').addEventListener('click', e => { const b = e.target.closest('[data-det]'); if (!b) return; det = b.dataset.det; loadTracks(); refresh(); });
+$('#truth').addEventListener('change', e => { truth = e.target.checked; $('#leg-truth').hidden = !truth; refresh(); });
+function setTab(name) {
+  tab = name;
+  $$('.tab').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === name));
+  $$('.tabpanel').forEach(p => p.hidden = p.dataset.panel !== name);
+  refresh();
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+function refresh() {
+  renderSeg(); drawMap(); renderQueue();
+  const b = one(`SELECT loitering, false_alarm_rate FROM v_lw_board WHERE detector = (SELECT label FROM lw_detector WHERE detector = :d)`, { ':d': det });
+  const lab = one(`SELECT label FROM lw_detector WHERE detector = :d`, { ':d': det }).label;
+  $('#headline').textContent = lab;
+  $('#headmeta').textContent = b ? `whole test set: loitering AUROC ${f3(b.loitering)} · ${pct(b.false_alarm_rate)} false alarms` : '';
+  if (tab === 'window') renderWindow();
+  if (tab === 'board') renderBoard();
+  if (tab === 'fa') renderFeatured();
+  if (tab === 'about') renderAbout();
+}
+
+initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/${f}` }).then(S => {
+  SQL = S; db = new SQL.Database();
+  db.exec($('#lw-schema').textContent); db.exec($('#lw-data').textContent);
+  $('#sqlitever').textContent = one('SELECT sqlite_version() AS v').v;
+  const st = one(`SELECT (SELECT count(*) FROM lw_window) AS w, (SELECT count(*) FROM lw_point) AS p, (SELECT sum(n) FROM lw_density) AS d`);
+  $('#dbstats').textContent = `${st.w} windows · ${st.p.toLocaleString()} track points · density from ${st.d.toLocaleString()} reports`;
+  sel = (one(`SELECT window_id FROM v_lw_alert WHERE detector = 'jepa' AND alerted AND kind <> 'normal' ORDER BY score DESC LIMIT 1`) || {}).window_id ?? null;
+  bounds(); loadTracks(); renderPresets(); $('#sql').value = PRESETS[0][1][0][1];
+  $('#boot').hidden = true; refresh();
+}).catch(e => { $('#boot').textContent = 'Could not start SQLite: ' + e.message; });
+})();
+</script>
+</body>
+</html>
