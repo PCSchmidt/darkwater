@@ -10,6 +10,12 @@ There is no backend and almost no application logic in JavaScript. SQLite (compi
 
 > All vessels, companies, people and events are fictional. Coastlines and traffic lanes are approximate and not for navigation.
 
+## Latent Wake panel
+
+[`latent-wake.html`](https://pcschmidt.github.io/darkwater/latent-wake.html) is a companion page built the same way, for real data: learned anomaly detectors from [Latent Wake](https://github.com/PCSchmidt/latent-wake) (a JEPA world model, a TrAISformer-style forecaster, and a Kalman filter) scoring a sample of its frozen test set, real NOAA AIS for Chesapeake Bay and Hampton Roads, June 2025, with synthetic anomalies injected into held-out tracks. Pick a detector to see what it alerts on at a 1% false-alarm budget, then show the injected truth to see what it caught and what it cried wolf on. Vessels are anonymized: no MMSIs, names or times. The scoreboard is the recorded benchmark; every panel is a query over `sql/latentwake/schema.sql`.
+
+The data file `sql/latentwake/data.sql` is generated in the latent-wake repository with `python -m latentwake.export_panel --out <path-to-darkwater>/sql/latentwake/data.sql`; `build.py` builds the page only when it exists.
+
 ## Where the logic lives
 
 | Concern | SQL feature | Object |
@@ -58,7 +64,10 @@ sql/schema.sql      tables, constraints, triggers (detectors) and views (analyti
 sql/seed.sql        fictional fleet, companies, ownership graph, zones, scenario, notes
 sql/tick.sql        one ten-minute step of the world
 src/page.html       UI shell; {{SCHEMA}}, {{SEED}}, {{TICK}} are filled at build time
-build.py            assembles index.html
+src/style.css       shared styles for both pages
+src/latent-wake.html  Latent Wake panel shell
+sql/latentwake/     panel schema and views; data.sql exported from latent-wake
+build.py            assembles index.html (and latent-wake.html when its data exists)
 scripts/simulate.mjs  runs the scenario headless in Node and prints the findings
 index.html          the built site (committed, served by GitHub Pages)
 ```
